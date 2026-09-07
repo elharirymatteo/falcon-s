@@ -1,0 +1,135 @@
+{
+  "name": "Navion",
+  "vehicle_params": {
+    "mass": 1293.0,
+    "inertia_matrix": [
+      [1742.33, 0.0, 149.5],
+      [0.0, 3762.4, 0.0],
+      [149.5, 0.0, 4389.1]
+    ],
+    "wing": {
+      "span": 10.19,
+      "area": 17.112,
+      "mac": 1.74,
+      "aspect_ratio": 6.04,
+      "taper_ratio": 0.54,
+      "cg_offset_vector": [0.0, 0.0, 0.0]
+    },
+    "actuator_system": {
+      "aero_surfaces": {
+        "elevator": {
+          "type": "control_surface", 
+          "surface_type": "elevator",
+          "min_deflection": -20.0, 
+          "max_deflection": 20.0, 
+          "omega_0": 10.0,
+          "zeta": 0.70710678119,
+          "use_rk45_integration": "True"
+        },
+        "ailerons": {
+          "type": "control_surface", 
+          "surface_type": "aileron",
+          "min_deflection": -20.0, 
+          "max_deflection": 20.0, 
+          "omega_0": 10.0,
+          "zeta": 0.70710678119,
+          "use_rk45_integration": "True"
+        },
+        "rudder": {
+          "type": "control_surface", 
+          "surface_type": "rudder",
+          "min_deflection": -15.0, 
+          "max_deflection": 15.0, 
+          "omega_0": 10.0,
+          "zeta": 0.70710678119,
+          "use_rk45_integration": "True"
+        }
+      },
+      "motors": {
+        "centre_motor": {
+          "type": "piston_engine",
+          "position": [2.44, 0.0, 0.0],
+          "direction": "clockwise",
+          "max_power": 178968.0,
+          "max_thrust": 4500.0,
+          "thrust_vector": [1.0, 0.0, 0.0],
+          "T": 3.0,
+          "use_rk45_integration": "True",
+          "min_throttle": 0.0,
+          "max_throttle": 1.0,
+          "motor_propeller_data": {
+            "propeller_efficiency": 0.82,
+            "k_q": 655,
+            "k_o": 1,
+            "k_m": 139.4,
+            "C_p": 0.1035,
+            "Sp": 3.563
+          }
+        }
+      }
+    },
+    "sensor_system": {
+        "navigation": {
+          "gps_position": {
+            "type": "position",
+            "noise_std": 0.05,
+            "bias": [0.0, 0.0, 0.0],
+            "sampling_rate": 100.0,
+            "delay": 0.0,
+            "enable_noise": false
+          },
+          "gps_velocity": {
+            "type": "velocity",
+            "noise_std": 0.05,
+            "bias": [0.0, 0.0, 0.0],
+            "sampling_rate": 100.0,
+            "delay": 0.0,
+            "enable_noise": false
+          }
+        },
+        "imu": {
+          "attitude_sensor": {
+            "type": "attitude",
+            "noise_std": 0.01,
+            "bias": [0.0, 0.0, 0.0],
+            "sampling_rate": 100.0,
+            "delay": 0.0,
+            "enable_noise": false
+          },
+          "gyroscope": {
+            "type": "angular_velocity",
+            "noise_std": 0.01,
+            "bias": [0.0, 0.0, 0.0],
+            "sampling_rate": 100.0,
+            "delay": 0.0,
+            "enable_noise": false
+          }
+        }
+      }
+  },
+  "aero_params": {
+    "type": "polynomial",
+    "poly_params_file": "Navion_poly_params.csv",
+    "stall_angle_deg": 13.0
+  },
+  "environment_params": {
+    "g": 9.81,
+    "dt": 0.01,
+    "solver_type": "RK45",
+    "integration_atol": 1e-10,
+    "integration_rtol": 1e-8,
+    "seed": 420,
+    "constant_wind": [0.0, 0.0, 0.0],
+    "turbulence": {
+      "enable": false,
+      "model": "dryden",
+      "intensity": "light"
+    }
+  },
+  "default_initial_state": {
+    "position": [0.0, 0.0, -1.0],
+    "linear_vel": [75, 0.0, 0.0],
+    "angular_vel": [0.0, 0.0, 0.0],
+    "orientation": [1.0, 0.0, 0.0, 0.0]
+  }
+}

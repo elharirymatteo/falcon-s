@@ -1,0 +1,258 @@
+{
+ "Airship_V7/circle/MPPI": {
+  "n": 5,
+  "survival": 1.0,
+  "phi_mean": 3.9680843531508287,
+  "phi_std": 5.237025740125503,
+  "phi_min": 0.7776955841337494,
+  "phi_max": 14.402597514157053
+ },
+ "Airship_V7/circle/PPO": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 1.8295150083789355,
+  "phi_std": 0.2053435508576435,
+  "phi_min": 1.605131792219974,
+  "phi_max": 2.101356514823116
+ },
+ "Airship_V7/circle/SAC": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 12.988810583751643,
+  "phi_std": 1.4041606656867984,
+  "phi_min": 11.061963456023046,
+  "phi_max": 14.368101761606294
+ },
+ "Airship_V7/circle/TD3": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 23.625814171411594,
+  "phi_std": 6.3651585873527585,
+  "phi_min": 14.775781236672646,
+  "phi_max": 29.47580556970189
+ },
+ "Airship_V7/figure8/MPPI": {
+  "n": 5,
+  "survival": 1.0,
+  "phi_mean": 0.646882193967517,
+  "phi_std": 0.29234167981702314,
+  "phi_min": 0.33022343037521823,
+  "phi_max": 1.1618092895894812
+ },
+ "Airship_V7/figure8/PPO": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 2.1822730044666367,
+  "phi_std": 0.15054715498268603,
+  "phi_min": 1.9825471449729495,
+  "phi_max": 2.3460018452866205
+ },
+ "Airship_V7/figure8/SAC": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 20.90288770297182,
+  "phi_std": 12.797033682502812,
+  "phi_min": 10.311609315594824,
+  "phi_max": 38.90737118705423
+ },
+ "Airship_V7/figure8/TD3": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 17.98572948157596,
+  "phi_std": 5.633006884670717,
+  "phi_min": 10.231282587558844,
+  "phi_max": 23.443321515346092
+ },
+ "Airship_V7/helix/MPPI": {
+  "n": 5,
+  "survival": 1.0,
+  "phi_mean": 0.30833510064966774,
+  "phi_std": 0.167881402524301,
+  "phi_min": 0.12963007950315666,
+  "phi_max": 0.6100839964716164
+ },
+ "Airship_V7/helix/PPO": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 0.8457368539401937,
+  "phi_std": 0.1757962656878498,
+  "phi_min": 0.6607868641473144,
+  "phi_max": 1.0820924121570485
+ },
+ "Airship_V7/helix/SAC": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 7.083360226339168,
+  "phi_std": 2.3514384282492378,
+  "phi_min": 4.867281774915932,
+  "phi_max": 10.338639831147654
+ },
+ "Airship_V7/helix/TD3": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 11.134182459176843,
+  "phi_std": 3.1756095239160897,
+  "phi_min": 7.074474132344973,
+  "phi_max": 14.827112086415404
+ },
+ "Airship_V7/sturn/MPPI": {
+  "n": 5,
+  "survival": 1.0,
+  "phi_mean": 0.19024562015302965,
+  "phi_std": 0.09812278870102249,
+  "phi_min": 0.09241019062656906,
+  "phi_max": 0.3678300661864144
+ },
+ "Airship_V7/sturn/PPO": {
+  "n": 3,
+  "survival": 0.6666666666666666,
+  "phi_mean": 2.2847804669053167,
+  "phi_std": 0.12315679242024458,
+  "phi_min": 2.1616236744850723,
+  "phi_max": 2.4079372593255615
+ },
+ "Airship_V7/sturn/SAC": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 12.64673792473903,
+  "phi_std": 4.92448572108553,
+  "phi_min": 7.256409661283654,
+  "phi_max": 19.1608168676282
+ },
+ "Airship_V7/sturn/TD3": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 12.144205431076537,
+  "phi_std": 2.128045477468918,
+  "phi_min": 9.16693214605865,
+  "phi_max": 14.013301231712829
+ },
+ "Volantex_Ranger/circle/MPPI": {
+  "n": 5,
+  "survival": 1.0,
+  "phi_mean": 0.7000284025328104,
+  "phi_std": 0.48305672611786865,
+  "phi_min": 0.16489493622388465,
+  "phi_max": 1.3129186829017503
+ },
+ "Volantex_Ranger/circle/PPO": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 1.0391623494402955,
+  "phi_std": 0.01788339571807088,
+  "phi_min": 1.015310500537108,
+  "phi_max": 1.058371181383977
+ },
+ "Volantex_Ranger/circle/SAC": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 6.728499371161045,
+  "phi_std": 3.358223201601964,
+  "phi_min": 4.244249704261787,
+  "phi_max": 11.476030358261035
+ },
+ "Volantex_Ranger/circle/TD3": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 5.263309148478106,
+  "phi_std": 1.2701213964701115,
+  "phi_min": 3.720560363792603,
+  "phi_max": 6.83140004194929
+ },
+ "Volantex_Ranger/figure8/MPPI": {
+  "n": 5,
+  "survival": 0.8,
+  "phi_mean": 8.636904695201384,
+  "phi_std": 14.098815477131067,
+  "phi_min": 0.23376140835820208,
+  "phi_max": 33.05499885596026
+ },
+ "Volantex_Ranger/figure8/PPO": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 1.7454103527592328,
+  "phi_std": 0.019628694712892917,
+  "phi_min": 1.7274236412538855,
+  "phi_max": 1.7727145561469964
+ },
+ "Volantex_Ranger/figure8/SAC": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 7.164667278177173,
+  "phi_std": 1.841054302518305,
+  "phi_min": 4.740157954137182,
+  "phi_max": 9.198832714225652
+ },
+ "Volantex_Ranger/figure8/TD3": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 5.543429001367596,
+  "phi_std": 0.7476993151948879,
+  "phi_min": 4.860093852389208,
+  "phi_max": 6.58393218209217
+ },
+ "Volantex_Ranger/helix/MPPI": {
+  "n": 5,
+  "survival": 1.0,
+  "phi_mean": 0.18275566087376638,
+  "phi_std": 0.03906802535070339,
+  "phi_min": 0.1385371852455497,
+  "phi_max": 0.23894464223087045
+ },
+ "Volantex_Ranger/helix/PPO": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 0.41743186512571223,
+  "phi_std": 0.016362828662563847,
+  "phi_min": 0.39475772715396773,
+  "phi_max": 0.43277216320687134
+ },
+ "Volantex_Ranger/helix/SAC": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 3.8896570741815046,
+  "phi_std": 0.9756176317182352,
+  "phi_min": 3.1647786851175845,
+  "phi_max": 5.26878606200359
+ },
+ "Volantex_Ranger/helix/TD3": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 5.32858883468221,
+  "phi_std": 2.701665037073764,
+  "phi_min": 3.397328598946735,
+  "phi_max": 9.14924371342688
+ },
+ "Volantex_Ranger/sturn/MPPI": {
+  "n": 5,
+  "survival": 0.8,
+  "phi_mean": 7.333839157770386,
+  "phi_std": 5.563551295777407,
+  "phi_min": 0.19808982988254092,
+  "phi_max": 14.30998517239404
+ },
+ "Volantex_Ranger/sturn/PPO": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 2.0241744905346692,
+  "phi_std": 0.02223903170566715,
+  "phi_min": 2.007750074143076,
+  "phi_max": 2.0556147142818464
+ },
+ "Volantex_Ranger/sturn/SAC": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 7.180546958791338,
+  "phi_std": 0.879251213711527,
+  "phi_min": 5.946442713869836,
+  "phi_max": 7.929371915022322
+ },
+ "Volantex_Ranger/sturn/TD3": {
+  "n": 3,
+  "survival": 1.0,
+  "phi_mean": 5.935978804184104,
+  "phi_std": 1.3096714472385458,
+  "phi_min": 4.85529567498526,
+  "phi_max": 7.778991444023399
+ }
+}

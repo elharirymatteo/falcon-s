@@ -1,0 +1,12 @@
+{
+  "peak_warp_env_steps_per_s": 19461717,
+  "peak_torch_env_steps_per_s": 2586610,
+  "python_single_env_steps_per_s": 589.2,
+  "warp_vs_torch_propagation_ratio": 7.52,
+  "warp_vs_python_peak_ratio": 33030.7,
+  "warp_vs_torch_end_to_end_training_ratio_est": 1.59,
+  "end_to_end_note": "training is gradient-bound (sim 2-9% of wall); backend speed changes only that fraction, so end-to-end << propagation ratio.",
+  "hardware": "RTX 4090 + Ryzen 9 7950X",
+  "envs_at_peak": 16384,
+  "source": "training_logs/sim_throughput.csv, reward_curves_2026_07_19 logs"
+}

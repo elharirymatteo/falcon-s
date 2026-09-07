@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+results/traces/
+results/_frames/
+results/_gate/
+*.mp4
+results/_logs/

@@ -1,0 +1,10 @@
+{
+ "date": "2026-09-06",
+ "python": "3.10.12",
+ "torch": "2.7.0+cu126",
+ "cuda": "12.6",
+ "warp": "1.8.1",
+ "gpu": "NVIDIA GeForce RTX 4090",
+ "driver": "580.95.05",
+ "commit": "9279d270f80473830d81efca43a3be40dbdef4f5"
+}

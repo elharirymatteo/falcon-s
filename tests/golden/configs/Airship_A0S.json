@@ -1,0 +1,880 @@
+{
+ "params": {
+  "aero_params": {
+   "CD_coefs": [
+    0.12685765326023102,
+    0.016081281006336212,
+    0.002090203110128641,
+    0.0016315474640578032,
+    0.0007389680831693113,
+    0.00013578379002865404,
+    9.93112507785554e-07,
+    6.796064440095506e-07,
+    -8.935327059589326e-06,
+    2.197203457399155e-06,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "CL_coefs": [
+    0.9301937222480774,
+    0.027020655572414398,
+    0.06095084547996521,
+    0.0020736861042678356,
+    -0.001988687552511692,
+    -0.001665094867348671,
+    0.0,
+    0.0004676783864852041,
+    0.00015725234698038548,
+    -6.101340204622829e-06,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "CMx_coefs": [
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0014840851072221994,
+    -0.002471227664500475,
+    -5.693879856494277e-08,
+    -7.265492207864099e-09,
+    1.8170073445844537e-08,
+    1.945190433616517e-06,
+    1.0729926316344063e-06,
+    1.1309489167388165e-07,
+    5.060132366452308e-07,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0
+   ],
+   "CMy_coefs": [
+    2.8114262022427283e-05,
+    -0.012190006673336029,
+    -0.02274971827864647,
+    -0.0010524840326979756,
+    0.0006574036087840796,
+    0.0007596256327815354,
+    0.00028209283482283354,
+    -0.00018113147234544158,
+    -0.00011508850002428517,
+    -1.1427716344769578e-05,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "CMz_coefs": [
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    -0.0,
+    0.0006860053399577737,
+    0.000543374044355005,
+    3.7776976569148246e-07,
+    8.319120503585964e-09,
+    -9.250479138245282e-08,
+    -4.502693172980798e-06,
+    -7.75606565639464e-07,
+    -9.692235636293844e-08,
+    -1.3501797013759642e-07
+   ],
+   "CY_coefs": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    -0.009856503456830978,
+    -0.011315319687128067,
+    0.0,
+    -2.5831932079500852e-12,
+    1.8675565343073686e-06,
+    6.311032484518364e-05,
+    6.1487144193961285e-06,
+    2.9904285838711075e-06,
+    2.2423653263103915e-06
+   ],
+   "Clp": -0.4,
+   "Cmq": -10.0,
+   "Cnr": -0.25,
+   "aileron_exp": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    1.0,
+    2.0,
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "alpha_exp": [
+    0.0,
+    1.0,
+    0.0,
+    2.0,
+    1.0,
+    0.0,
+    3.0,
+    2.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "beta_exp": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    2.0,
+    1.0,
+    0.0,
+    3.0,
+    2.0,
+    1.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    2.0,
+    1.0,
+    0.0,
+    3.0,
+    2.0,
+    1.0,
+    0.0
+   ],
+   "elevator_exp": [
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    1.0,
+    2.0,
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "poly_params_file": "/home/matteo/Projects/WIG_Plane_RL_Control/data/aircraft/Airship_A0S/A0_V8_poly_params_refit_corrected.csv",
+   "rudder_exp": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    1.0,
+    2.0,
+    0.0,
+    1.0,
+    2.0,
+    3.0
+   ],
+   "stall_angle_deg": 13.0,
+   "type": "polynomial"
+  },
+  "control_limits": {
+   "aileron_limits": {},
+   "elevator_limits": {},
+   "rudder_limits": {},
+   "throttle_limits": {}
+  },
+  "default_initial_state": {
+   "angular_vel": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_vel": [
+    13.0,
+    0.0,
+    0.0
+   ],
+   "orientation": [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+   ],
+   "position": [
+    0.0,
+    0.0,
+    -1.0
+   ]
+  },
+  "environment_params": {
+   "constant_wind": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "dt": 0.01,
+   "g": 9.81,
+   "integration_atol": 1e-10,
+   "integration_rtol": 1e-08,
+   "seed": 69,
+   "solver_type": "RK45",
+   "turbulence": {
+    "enable": false,
+    "intensity": "light",
+    "model": "dryden"
+   }
+  },
+  "vehicle_params": {
+   "J": {
+    "L_xx": 2.867134431733256,
+    "L_xy": 0.0,
+    "L_xz": 0.908936020603816,
+    "L_yx": 0.0,
+    "L_yy": 4.50169069702822,
+    "L_yz": 0.0,
+    "L_zx": 0.908936020603816,
+    "L_zy": 0.0,
+    "L_zz": 6.486039002081812
+   },
+   "Mac": 0.36,
+   "PP": {
+    "C_p": 0.57,
+    "Sp": 0.073,
+    "T_max": 60.0,
+    "k_m": 57.6,
+    "k_o": 1279.0,
+    "k_q": 7e-07,
+    "td1": [
+     0.042,
+     -0.3234,
+     0.00216
+    ],
+    "td2": [
+     0.042,
+     0.3234,
+     0.00216
+    ],
+    "tvi": [
+     1.0,
+     0.0,
+     0.0
+    ]
+   },
+   "T_s": 0.2,
+   "WP": {
+    "area": 1.0,
+    "aspect_ratio": 7.53,
+    "cg_offset_vector": [
+     -0.09,
+     0.0,
+     0.0
+    ],
+    "mac": 0.36,
+    "span": 2.76,
+    "taper_ratio": 0.39
+   },
+   "actuator_system": {
+    "aero_surfaces": {
+     "ailerons": {
+      "max_deflection": 15.0,
+      "min_deflection": -15.0,
+      "omega_0": 10.0,
+      "surface_type": "aileron",
+      "type": "control_surface",
+      "use_rk45_integration": "True",
+      "zeta": 0.70710678119
+     },
+     "elevator": {
+      "max_deflection": 20.0,
+      "min_deflection": -20.0,
+      "omega_0": 10.0,
+      "surface_type": "elevator",
+      "type": "control_surface",
+      "use_rk45_integration": "True",
+      "zeta": 0.70710678119
+     },
+     "rudder": {
+      "max_deflection": 15.0,
+      "min_deflection": -15.0,
+      "omega_0": 10.0,
+      "surface_type": "rudder",
+      "type": "control_surface",
+      "use_rk45_integration": "True",
+      "zeta": 0.70710678119
+     }
+    },
+    "motors": {
+     "left_motor": {
+      "T": 0.2,
+      "direction": "clockwise",
+      "max_throttle": 1.0,
+      "max_thrust": 30.0,
+      "min_throttle": 0.0,
+      "motor_propeller_data": {
+       "C_p": 0.57,
+       "Sp": 0.073,
+       "k_m": 57.6,
+       "k_o": 1279.0,
+       "k_q": 7e-07
+      },
+      "position": [
+       0.042,
+       -0.3234,
+       0.00216
+      ],
+      "thrust_vector": [
+       1.0,
+       0.0,
+       0.0
+      ],
+      "type": "electric_motor",
+      "use_rk45_integration": "True"
+     },
+     "right_motor": {
+      "T": 0.2,
+      "direction": "counterclockwise",
+      "max_throttle": 1.0,
+      "max_thrust": 30.0,
+      "min_throttle": 0.0,
+      "motor_propeller_data": {
+       "C_p": 0.57,
+       "Sp": 0.073,
+       "k_m": 57.6,
+       "k_o": 1279.0,
+       "k_q": 7e-07
+      },
+      "position": [
+       0.042,
+       0.3234,
+       0.00216
+      ],
+      "thrust_vector": [
+       1.0,
+       0.0,
+       0.0
+      ],
+      "type": "electric_motor",
+      "use_rk45_integration": "True"
+     }
+    }
+   },
+   "estimator_system": {
+    "state_estimation": {
+     "primary_ekf": {
+      "dt": 0.01,
+      "enable_estimation": false,
+      "initial_covariance": 0.1,
+      "measurement_noise": {
+       "attitude_sensor": 0.01,
+       "gps_position": 0.05,
+       "gps_velocity": 0.05,
+       "gyroscope": 0.01
+      },
+      "primary": true,
+      "process_noise": {
+       "angular_velocity": 0.01,
+       "orientation": 0.01,
+       "position": 0.01,
+       "velocity": 0.01
+      },
+      "type": "extended_kalman"
+     }
+    }
+   },
+   "inertia_matrix": [
+    [
+     2.867134431733256,
+     0.0,
+     0.908936020603816
+    ],
+    [
+     0.0,
+     4.50169069702822,
+     0.0
+    ],
+    [
+     0.908936020603816,
+     0.0,
+     6.486039002081812
+    ]
+   ],
+   "m": 11.2,
+   "omega_0": 10.0,
+   "sensor_system": {
+    "imu": {
+     "attitude_sensor": {
+      "delay": 0.0,
+      "enable_noise": true,
+      "noise_std": 0.01,
+      "sampling_rate": 100.0,
+      "type": "attitude"
+     },
+     "gyroscope": {
+      "bias": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "delay": 0.0,
+      "enable_noise": true,
+      "noise_std": 0.01,
+      "sampling_rate": 100.0,
+      "type": "angular_velocity"
+     }
+    },
+    "navigation": {
+     "gps_position": {
+      "bias": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "delay": 0.0,
+      "enable_noise": true,
+      "noise_std": 0.05,
+      "sampling_rate": 100.0,
+      "type": "position"
+     },
+     "gps_velocity": {
+      "bias": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "delay": 0.0,
+      "enable_noise": true,
+      "noise_std": 0.05,
+      "sampling_rate": 100.0,
+      "type": "velocity"
+     }
+    }
+   },
+   "stall_angle": 0.22689280275926285,
+   "zeta": 0.70710678119
+  }
+ },
+ "raw": {
+  "aero_params": {
+   "Clp": -0.4,
+   "Cmq": -10.0,
+   "Cnr": -0.25,
+   "poly_params_file": "/home/matteo/Projects/WIG_Plane_RL_Control/data/aircraft/Airship_A0S/A0_V8_poly_params_refit_corrected.csv",
+   "stall_angle_deg": 13.0,
+   "type": "polynomial"
+  },
+  "default_initial_state": {
+   "angular_vel": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "linear_vel": [
+    13.0,
+    0.0,
+    0.0
+   ],
+   "orientation": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "position": [
+    0.0,
+    0.0,
+    -1.0
+   ]
+  },
+  "environment_params": {
+   "constant_wind": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "dt": 0.01,
+   "g": 9.81,
+   "integration_atol": 1e-10,
+   "integration_rtol": 1e-08,
+   "seed": 69,
+   "solver_type": "RK45",
+   "turbulence": {
+    "enable": false,
+    "intensity": "light",
+    "model": "dryden"
+   }
+  },
+  "name": "Airship_A0S",
+  "vehicle_params": {
+   "actuator_system": {
+    "aero_surfaces": {
+     "ailerons": {
+      "max_deflection": 15.0,
+      "min_deflection": -15.0,
+      "omega_0": 10.0,
+      "surface_type": "aileron",
+      "type": "control_surface",
+      "use_rk45_integration": "True",
+      "zeta": 0.70710678119
+     },
+     "elevator": {
+      "max_deflection": 20.0,
+      "min_deflection": -20.0,
+      "omega_0": 10.0,
+      "surface_type": "elevator",
+      "type": "control_surface",
+      "use_rk45_integration": "True",
+      "zeta": 0.70710678119
+     },
+     "rudder": {
+      "max_deflection": 15.0,
+      "min_deflection": -15.0,
+      "omega_0": 10.0,
+      "surface_type": "rudder",
+      "type": "control_surface",
+      "use_rk45_integration": "True",
+      "zeta": 0.70710678119
+     }
+    },
+    "motors": {
+     "left_motor": {
+      "T": 0.2,
+      "direction": "clockwise",
+      "max_throttle": 1.0,
+      "max_thrust": 30.0,
+      "min_throttle": 0.0,
+      "motor_propeller_data": {
+       "C_p": 0.57,
+       "Sp": 0.073,
+       "k_m": 57.6,
+       "k_o": 1279.0,
+       "k_q": 7e-07
+      },
+      "position": [
+       0.042,
+       -0.3234,
+       0.00216
+      ],
+      "thrust_vector": [
+       1.0,
+       0.0,
+       0.0
+      ],
+      "type": "electric_motor",
+      "use_rk45_integration": "True"
+     },
+     "right_motor": {
+      "T": 0.2,
+      "direction": "counterclockwise",
+      "max_throttle": 1.0,
+      "max_thrust": 30.0,
+      "min_throttle": 0.0,
+      "motor_propeller_data": {
+       "C_p": 0.57,
+       "Sp": 0.073,
+       "k_m": 57.6,
+       "k_o": 1279.0,
+       "k_q": 7e-07
+      },
+      "position": [
+       0.042,
+       0.3234,
+       0.00216
+      ],
+      "thrust_vector": [
+       1.0,
+       0.0,
+       0.0
+      ],
+      "type": "electric_motor",
+      "use_rk45_integration": "True"
+     }
+    }
+   },
+   "estimator_system": {
+    "state_estimation": {
+     "primary_ekf": {
+      "dt": 0.01,
+      "enable_estimation": false,
+      "initial_covariance": 0.1,
+      "measurement_noise": {
+       "attitude_sensor": 0.01,
+       "gps_position": 0.05,
+       "gps_velocity": 0.05,
+       "gyroscope": 0.01
+      },
+      "primary": true,
+      "process_noise": {
+       "angular_velocity": 0.01,
+       "orientation": 0.01,
+       "position": 0.01,
+       "velocity": 0.01
+      },
+      "type": "extended_kalman"
+     }
+    }
+   },
+   "inertia_matrix": [
+    [
+     2.867134431733256,
+     0.0,
+     0.908936020603816
+    ],
+    [
+     0.0,
+     4.50169069702822,
+     0.0
+    ],
+    [
+     0.908936020603816,
+     0.0,
+     6.486039002081812
+    ]
+   ],
+   "mass": 11.2,
+   "sensor_system": {
+    "imu": {
+     "attitude_sensor": {
+      "delay": 0.0,
+      "enable_noise": true,
+      "noise_std": 0.01,
+      "sampling_rate": 100.0,
+      "type": "attitude"
+     },
+     "gyroscope": {
+      "bias": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "delay": 0.0,
+      "enable_noise": true,
+      "noise_std": 0.01,
+      "sampling_rate": 100.0,
+      "type": "angular_velocity"
+     }
+    },
+    "navigation": {
+     "gps_position": {
+      "bias": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "delay": 0.0,
+      "enable_noise": true,
+      "noise_std": 0.05,
+      "sampling_rate": 100.0,
+      "type": "position"
+     },
+     "gps_velocity": {
+      "bias": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "delay": 0.0,
+      "enable_noise": true,
+      "noise_std": 0.05,
+      "sampling_rate": 100.0,
+      "type": "velocity"
+     }
+    }
+   },
+   "wing": {
+    "area": 1.0,
+    "aspect_ratio": 7.53,
+    "cg_offset_vector": [
+     -0.09,
+     0.0,
+     0.0
+    ],
+    "mac": 0.36,
+    "span": 2.76,
+    "taper_ratio": 0.39
+   }
+  }
+ }
+}

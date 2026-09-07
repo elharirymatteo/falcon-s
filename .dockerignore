@@ -1,0 +1,8 @@
+.venv/
+.git/
+results/traces/
+results/_gate/
+results/_logs/
+docs/
+**/__pycache__/
+*.egg-info/
