@@ -171,7 +171,7 @@ class AltitudeHoldPolicy:
     SCALE = dict(h=25.0, q=2.0, pitch=math.pi / 4, alpha=math.radians(20.0),
                  elev=1.0, elev_dot=100.0, thr=1.0, ierr=10.0, ref_rate=5.0)
 
-    def __init__(self, plane, target_altitude, seed=0, device="cpu", checkpoints=None):
+    def __init__(self, plane, seed=0, device="cpu", checkpoints=None):
         from falcons.aircraft.config import AircraftConfig
         from falcons.controllers.policies import load_policy
         from falcons.envs.configs import altitude_env_cfg
@@ -204,8 +204,7 @@ class AltitudeHoldPolicy:
         self.policy = load_policy("ppo", "altitude", plane, seed, device=device,
                                   ckpt_dir=checkpoints or CKPT_DIR)
         self.device = device
-        self.target = float(target_altitude)
-        self.reset(target_altitude)
+        self.reset(0.0)                                  # fly() resets with the real target
 
     def reset(self, target_altitude, altitude=None):
         self.target = float(target_altitude)
@@ -276,7 +275,7 @@ class AltitudeHoldPolicy:
 # --- the loop ---------------------------------------------------------------------------------
 
 def fly(args):
-    policy = AltitudeHoldPolicy(args.plane, args.target, seed=args.seed, device=args.device,
+    policy = AltitudeHoldPolicy(args.plane, seed=args.seed, device=args.device,
                                 checkpoints=args.checkpoints)
     dt = args.dt or policy.dt
     if args.mock:
@@ -284,7 +283,19 @@ def fly(args):
         dt = vehicle.dt
     else:
         vehicle = XPlaneBridge(args.host, args.port)
-    policy.reset(args.target, altitude=-vehicle.read()["position"][2])
+
+    # The target is resolved once, here, against the altitude the aeroplane is at when the loop
+    # takes over -- so --target-delta means "climb this much from wherever you are now", which is
+    # the useful thing to ask for in X-Plane where MSL depends on where you took off.
+    start_altitude = -vehicle.read()["position"][2]
+    if args.target_delta is not None:
+        target = start_altitude + args.target_delta
+        print(f"holding {target:.1f} m MSL: {start_altitude:.1f} m now "
+              f"{args.target_delta:+.1f} m")
+    else:
+        target = args.target if args.target is not None else start_altitude
+        print(f"holding {target:.1f} m MSL ({target - start_altitude:+.1f} m from here)")
+    policy.reset(target, altitude=start_altitude)
 
     log = None
     if args.log:
@@ -332,7 +343,13 @@ def main():
                    help="airframe whose PPO checkpoint to fly; needs "
                         "checkpoints/ppo_altitude_<plane>_s<seed>.pt")
     p.add_argument("--seed", type=int, default=0, help="checkpoint seed")
-    p.add_argument("--target", type=float, default=50.0, help="altitude to hold [m]")
+    target = p.add_mutually_exclusive_group()
+    target.add_argument("--target", type=float, default=None,
+                        help="absolute altitude to hold [m MSL]")
+    target.add_argument("--target-delta", type=float, default=None,
+                        help="altitude to hold, relative to where the aeroplane is when the loop "
+                             "takes over [m]; e.g. 15 climbs fifteen metres and holds. With "
+                             "neither flag the present altitude is held")
     p.add_argument("--seconds", type=float, default=60.0)
     p.add_argument("--mock", action="store_true",
                    help="fly the FALCON-S CPU plant instead of X-Plane, no X-Plane needed")

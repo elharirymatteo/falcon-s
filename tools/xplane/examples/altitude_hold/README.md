@@ -22,7 +22,7 @@ trained the checkpoint.
 
 ```bash
 .venv/bin/python tools/xplane/examples/altitude_hold/altitude_hold.py --mock \
-    --plane Volantex_Ranger --target 50 --start 40 --seconds 30
+    --plane Volantex_Ranger --start 40 --target-delta 10 --seconds 30
 ```
 
 `--mock` puts the FALCON-S CPU plant where X-Plane would be, through the same code path. No
@@ -40,8 +40,8 @@ emulation are correct. It does:
 ```
 
 It climbs 40 → 50 m along the 2 m/s rate-limited reference and holds within ±0.3 m. The airship
-(`--plane Airship_V7 --target 30 --start 20`) and a descent (`--target 30 --start 45`) both work
-too. What `--mock` does *not* test is any X-Plane convention: the state arrives already in
+(`--plane Airship_V7 --start 20 --target-delta 10`) and a descent (`--target-delta -10`) both
+work too. What `--mock` does *not* test is any X-Plane convention: the state arrives already in
 FALCON-S's frame, so a sign error in the bridge would not show up here.
 
 ## Then in X-Plane
@@ -57,12 +57,21 @@ FALCON-S's frame, so a sign error in the bridge would not show up here.
 
 ```bash
 .venv/bin/python tools/xplane/examples/altitude_hold/altitude_hold.py \
-    --plane Volantex_Ranger --target 500 --seconds 120 --log flight.csv
+    --plane Airship_V7 --target-delta 15 --seconds 120 --log flight.csv
 ```
 
-`--target` is **altitude MSL in metres**, matching X-Plane's POSI. The loop runs in real time at
-the airframe's control period (10 ms), reads state, sends stick and throttle, and prints a line
-every `--report` seconds. Ctrl-C returns the controls to neutral.
+**`--target-delta 15` climbs fifteen metres from wherever the aeroplane is when the loop takes
+over, and holds there.** That is usually what you want in X-Plane, where MSL depends on where you
+took off. `--target 500` sets an absolute altitude in metres MSL instead, matching X-Plane's POSI;
+the two are mutually exclusive, and with neither the present altitude is held. Whichever you use,
+the resolved target is printed before the first line of telemetry:
+
+```
+holding 55.0 m MSL: 40.0 m now +15.0 m
+```
+
+The loop runs in real time at the airframe's control period (10 ms), reads state, sends stick and
+throttle, and prints a line every `--report` seconds. Ctrl-C returns the controls to neutral.
 
 `--help` lists the rest: `--seed` for a different checkpoint of the same cell, `--host`/`--port`
 for a remote X-Plane, `--device cuda` to run the network on the GPU (it is a small MLP; CPU is
