@@ -14,9 +14,10 @@ second implementation of them.
              hold works there, the observation assembly and the actuator emulation are right,
              because the policy is back on the dynamics it was trained on.
 
-    default  connects to X-Plane. The X-Plane axis, sign and unit conventions in XPlaneBridge
-             are NOT flight-tested -- see the README before trusting a flight, and expect to
-             adjust ELEVATOR_SIGN and the velocity mapping on the first one.
+    default  connects to X-Plane. The read path is checked against a live session (velocity,
+             alpha, pitch and the body-rate signs all agree with X-Plane's own datarefs);
+             ELEVATOR_SIGN is not. See the README, and note --elevator-bias: a policy trained on
+             one airframe holds a steady but wrong altitude on another, and that is the fix.
 
 Two caveats worth stating in the code as well as the README. The policy commands the elevator
 and the throttle only; ailerons and rudder are left at zero, exactly as in training, so nothing
@@ -67,8 +68,9 @@ def quat_to_body(q, v_ned):
 class XPlaneBridge:
     """State out of X-Plane and stick positions back in, over XPlaneConnect."""
 
-    def __init__(self, host="localhost", port=49009):
+    def __init__(self, host="localhost", port=49009, elevator_bias=0.0):
         import xpc
+        self.elevator_bias = float(elevator_bias)
         self._c = xpc.XPlaneConnect(xpHost=host, xpPort=port)
         try:
             self._c.getDREF("sim/test/test_float")       # is anything answering on that port?
@@ -80,8 +82,18 @@ class XPlaneBridge:
                 f"  - to try the loop without X-Plane at all, run with --mock.") from None
         self._origin = None
 
+    # Every dataref the loop needs, in one request. getDREFs batches, getDREF does not: asking for
+    # these one at a time is ten more UDP round trips per control step, which at a 10 ms period is
+    # the difference between keeping up and falling behind.
+    DREFS = [f"sim/flightmodel/position/{name}" for name in
+             ("local_vx", "local_vy", "local_vz", "local_x", "local_z",
+              "P", "Q", "R", "true_airspeed", "alpha")]
+
     def read(self):
         posi = self._c.getPOSI()             # [lat, lon, alt_m, pitch, roll, heading, gear]
+        values = [row[0] for row in self._c.getDREFs(self.DREFS)]
+        vx, vy, vz, local_x, local_z, p, q, r, true_airspeed, alpha_deg = values
+
         altitude = posi[2]
         pitch, roll, yaw = (math.radians(a) for a in (posi[3], posi[4], posi[5]))
         quat = euler_to_quat(roll, pitch, yaw)
@@ -89,24 +101,29 @@ class XPlaneBridge:
         # X-Plane's local frame is x=east, y=up, z=south, so NED = [-vz, vx, -vy]. Going through
         # the local velocities and the attitude keeps the mapping derivable, rather than trusting
         # the semantics of the acf-axis force DREFs.
-        vx, vy, vz = (self._c.getDREF(f"sim/flightmodel/position/local_v{a}")[0] for a in "xyz")
         vel_ned = np.array([-vz, vx, -vy])
-        local_x, local_z = (self._c.getDREF(f"sim/flightmodel/position/local_{a}")[0] for a in "xz")
         if self._origin is None:
             self._origin = (local_x, local_z)
         north, east = -(local_z - self._origin[1]), local_x - self._origin[0]
 
-        rates = np.radians([self._c.getDREF(f"sim/flightmodel/position/{a}")[0] for a in "PQR"])
         return {"position": np.array([north, east, -altitude]),
                 "linear_vel": quat_to_body(quat, vel_ned),
-                "angular_vel": rates,
+                "angular_vel": np.radians([p, q, r]),
                 "orientation": quat,
-                "Va": self._c.getDREF("sim/flightmodel/position/true_airspeed")[0],
-                "alpha": math.radians(self._c.getDREF("sim/flightmodel/position/alpha")[0])}
+                "Va": true_airspeed,
+                "alpha": math.radians(alpha_deg)}
 
     def apply(self, action):
-        """X-Plane has no model of our servos, so it gets the servo's output position."""
-        self._c.sendCTRL([ELEVATOR_SIGN * action["elevator_pos"], 0.0, 0.0,
+        """X-Plane has no model of our servos, so it gets the servo's output position.
+
+        elevator_bias is added first: the policy's zero-error command is the trim of the airframe
+        it was trained on, and an X-Plane aeroplane that needs a different stick to fly level
+        presents that difference as a constant disturbance. The altitude channel is proportional
+        with no useful integral, so it can only answer a constant with a standing altitude error
+        -- the bias cancels it instead. See the README for how to measure one.
+        """
+        elevator = np.clip(self.elevator_bias + action["elevator_pos"], -1.0, 1.0)
+        self._c.sendCTRL([ELEVATOR_SIGN * float(elevator), 0.0, 0.0,
                           float(np.clip(action["throttle_pos"], 0.0, 1.0))])
 
     def neutral(self):
@@ -282,7 +299,9 @@ def fly(args):
         vehicle = MockPlant(args.plane, args.start, policy.target_va)
         dt = vehicle.dt
     else:
-        vehicle = XPlaneBridge(args.host, args.port)
+        vehicle = XPlaneBridge(args.host, args.port, args.elevator_bias)
+        if args.elevator_bias:
+            print(f"elevator bias {args.elevator_bias:+.3f} added to every command")
 
     # The target is resolved once, here, against the altitude the aeroplane is at when the loop
     # takes over -- so --target-delta means "climb this much from wherever you are now", which is
@@ -303,17 +322,34 @@ def fly(args):
         log.writerow(["t", "h", "target", "sub_target", "Va", "pitch_deg", "alpha_deg",
                       "elevator_norm", "throttle"])
     print(f"{'t':>6} {'h':>8} {'sub tgt':>8} {'Va':>7} {'pitch':>7} {'elev':>7} {'thr':>6}")
-    t, next_tick, next_report = 0.0, time.time(), 0.0
+    t, next_tick, next_report, last = 0.0, time.time(), 0.0, time.time()
+    step_dt, late = dt, 0
     try:
         while t < args.seconds:
             state = vehicle.read()
-            action = policy.act(state, dt)
+            action = policy.act(state, step_dt)
             vehicle.apply(action)
             if args.mock:
                 vehicle.advance()
+                step_dt = dt                             # a fixed step: the plant owns the clock
+                t += dt
             else:
-                next_tick += dt                          # real time, X-Plane runs on its own clock
-                time.sleep(max(0.0, next_tick - time.time()))
+                # X-Plane runs on its own clock, so the loop is paced to dt -- but if a cycle
+                # takes longer than dt (the UDP round trips, a stalled frame), the integral and
+                # the reference ramp have to advance by the time that actually passed, or a
+                # 2 m/s reference climbs at 2 m per loop-second instead of per real second and
+                # the printed clock drifts behind the wall clock.
+                next_tick += dt
+                slack = next_tick - time.time()
+                if slack > 0:
+                    time.sleep(slack)
+                else:
+                    late += 1
+                    next_tick = time.time()              # give up on catching up; keep real time
+                now = time.time()
+                step_dt = min(max(now - last, 1e-4), 10.0 * dt)
+                last = now
+                t += step_dt
             h = -state["position"][2]
             q = state["orientation"]
             pitch = math.degrees(math.asin(max(-1.0, min(1.0, 2 * (q[0] * q[2] - q[3] * q[1])))))
@@ -326,7 +362,6 @@ def fly(args):
                 next_report += args.report
                 print(f"{t:6.1f} {h:8.2f} {policy.sub_target:8.2f} {state['Va']:7.2f} "
                       f"{pitch:7.2f} {action['elevator_pos']:7.3f} {action['throttle_pos']:6.3f}")
-            t += dt
             if h < 0.0:
                 print(f"below ground at t = {t:.2f} s"); break
     except KeyboardInterrupt:
@@ -334,6 +369,10 @@ def fly(args):
     finally:
         vehicle.neutral()
         vehicle.close()
+    if late:
+        print(f"{late} cycles ran longer than the {dt * 1e3:.0f} ms period: the loop is limited "
+              f"by X-Plane's\nresponse time, not by dt. Raise --dt to match what it can actually "
+              f"do; the reference and\nthe integral already advance on the real elapsed time.")
 
 
 def main():
@@ -357,6 +396,11 @@ def main():
     p.add_argument("--host", default="localhost"), p.add_argument("--port", type=int, default=49009)
     p.add_argument("--dt", type=float, default=None,
                    help="control period [s]; default is the airframe's")
+    p.add_argument("--elevator-bias", type=float, default=0.0,
+                   help="constant added to the elevator command sent to X-Plane [-1, 1]. Set it "
+                        "to (the stick your aeroplane needs for level flight) minus (the stick "
+                        "the policy commands at zero altitude error), which cancels the trim "
+                        "mismatch that would otherwise show up as a standing altitude error")
     p.add_argument("--device", default="cpu", help="torch device for the policy")
     p.add_argument("--checkpoints", default=None)
     p.add_argument("--log", default=None, help="write a CSV of the flight here")
