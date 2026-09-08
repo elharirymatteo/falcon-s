@@ -98,11 +98,15 @@ class AircraftForcesAndMoments(ForcesAndMomentsBase):
         # Forces in wind frame: [drag, side_force, lift]
         F_wind = np.array([-D, Y, -L])
         
-        # Transform from wind frame to body frame
+        # Transform from wind frame to body frame. The first column is the direction the relative
+        # wind blows along, which alpha and beta already fix as [ca*cb, sb, sa*cb]: drag acts
+        # along minus that. Negating beta here instead would make drag push along the sideslip
+        # rather than against it, and would contradict beta = asin(v/Va) above and the sign of
+        # CY, CMx and CMz in the polynomial.
         R_wind_to_body = np.array([
-            [np.cos(alpha) * np.cos(beta), np.cos(alpha) * np.sin(beta), -np.sin(alpha)],  
-            [-np.sin(beta), np.cos(beta), 0],
-            [np.sin(alpha) * np.cos(beta), np.sin(alpha) * np.sin(beta), np.cos(alpha)]
+            [np.cos(alpha) * np.cos(beta), -np.cos(alpha) * np.sin(beta), -np.sin(alpha)],
+            [np.sin(beta), np.cos(beta), 0],
+            [np.sin(alpha) * np.cos(beta), -np.sin(alpha) * np.sin(beta), np.cos(alpha)]
         ])
         
         self.F_aero = R_wind_to_body @ F_wind

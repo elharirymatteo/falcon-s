@@ -207,7 +207,10 @@ def compute_forces_applied_to_body(alpha: wp.float32,
                                Fb: wp.vec3f,
                                Mb: wp.vec3f,) -> None:
      
-    q_aero = wp.quat_rpy(0.0, alpha, beta)
+    # -beta, not +beta: the inverse of quat_rpy(0, alpha, beta) rotates the wind-axis force as
+    # though the sideslip were the other way round, which would have drag push along the sideslip
+    # instead of against it. See the CPU plant's R_wind_to_body for the long version.
+    q_aero = wp.quat_rpy(0.0, alpha, -beta)
     Fb_aero = wp.quat_rotate_inv(q_aero, Fw_aero)
     
     gravity_vector = wp.vec3f(0.0, 0.0, g)

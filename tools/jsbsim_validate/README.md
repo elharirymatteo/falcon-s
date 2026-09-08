@@ -41,7 +41,7 @@ paper: 7.0 in across the text block, 3.4 in for a single column, 8 pt type.
 | figure | the claim | what is in it |
 | --- | --- | --- |
 | `fig1_rollout` | the two simulators fly the same aeroplane | altitude, airspeed, alpha and pitch rate across the top; the difference in each underneath on a log axis, at both plant steps. The top row is the evidence that this is a real manoeuvre and not a trim point; the bottom row is the accuracy |
-| `fig2_aero` | the aerodynamic model transferred, and where it did not | the coefficients from both sources (line and circles); what is left over, which is interpolation only; and the relative body-frame load error, explained below |
+| `fig2_aero` | the aerodynamic model transferred | the coefficients from both sources (line and circles); what is left over, which is interpolation only; and the relative body-frame load error, explained below |
 | `fig3_ground_effect` | ground effect is the one difference that is meant to be there | the ratio the two are measured to differ by against what the model asks for — `mu_l` and `mu_d·mu_l²` — and what it does to a release a fifth of a span off the ground |
 | `fig4_time_step` | what limits the agreement is FALCON-S's own step | error against the plant's own `dt/64` solution, log-log, with a first-order reference line. JSBSim is not involved, so the slope is about the integrator alone |
 
@@ -62,12 +62,13 @@ What it shows:
 * At `beta = 0`, force and moment both sit at 1e-8, which is round-off. Everything that goes
   into a load agrees: the tables, the dynamic pressure, the reference area and lengths, the
   moment reference point, the axis conventions.
-* At `beta = 10°`, the **force** error jumps seven decades to 3e-2…3e-1 while the **moment**
-  error does not move at all — the two moment curves land on top of each other, which is why the
-  sideslip series is drawn with open markers. That asymmetry localises the fault exactly: the
-  moments are handed over in body axes and need no rotation, the forces are computed in wind axes
-  and rotated, and the two simulators disagree on the sign of the sideslip terms in that rotation
-  (see the finding below). Nothing else could produce an error in the forces alone.
+* At `beta = 10°`, the same. All four curves land in the same band, which is why the sideslip
+  series is drawn with open markers — otherwise it hides the zero-sideslip one underneath.
+* That was not true when this tool was written. The sideslip **force** error stood seven decades
+  above the rest of the panel, at 3e-2…3e-1, while the **moment** error did not move at all, and
+  that asymmetry is what localised the fault: moments are handed over in body axes and need no
+  rotation, forces are computed in wind axes and rotated, so only the rotation could be wrong.
+  It was — see the finding below. This panel is now the guard against it coming back.
 
 `--diagnostic-plots` additionally writes the every-channel figures (`diag_states_oge`,
 `diag_states_ige`): fourteen panels each, for working out where an unexpected number in the
@@ -193,24 +194,41 @@ wrong. Body-frame force and moment at matched `(alpha, beta, V)` agree to 4e-4 N
 pressure, the reference lengths, the moment reference point and the axis conventions are all
 confirmed by that.
 
-**The wind-to-body rotation disagrees in the sign of the sideslip terms.** At `beta = 10°` the
-force difference jumps to 4.4e2 N in x and 1.1e3 N in y while the moments stay exact.
-`forces_moments.py` builds
+**The wind-to-body rotation had the sign of the sideslip terms wrong. Found here, fixed by
+"sim: fix the sign of the sideslip terms in the wind-to-body rotation".** At `beta = 10°` the force difference was 4.4e2 N in x and 1.1e3 N in y while the
+moments stayed exact. All three plants built the rotation the same way — the CPU one as an
+explicit matrix, the Warp and Torch ones as `quat_rpy(0, alpha, beta)` followed by an inverse
+rotation, which expands to the same thing — so they agreed with each other and disagreed with
+JSBSim together, and cross-plant parity never showed it:
 
 ```
+was                                           now, and what JSBSim uses
 [ ca*cb   ca*sb  -sa ]                        [ ca*cb  -ca*sb  -sa ]
-[  -sb     cb     0  ]   where JSBSim uses    [   sb     cb     0  ]
+[  -sb     cb     0  ]                        [   sb     cb     0  ]
 [ sa*cb   sa*sb   ca ]                        [ sa*cb  -sa*sb   ca ]
 ```
 
-which is the same matrix with `beta` negated. Both feed it `F_wind = [-D, Y, -L]`, so at
-`beta = 0` they are identical and the discrepancy is invisible; it appears only in sideslip. The
-`_lateral_sign_fixed` column in the poly CSVs suggests the lateral signs have been adjusted
-before, so whether this is a slip or is compensated in the CY and CMz fits is a question for
-whoever fitted them. The tool reports it rather than papering over it: check 2 runs at both
-`beta = 0` and `beta = 10°`, and the rollouts print `beta` so it is clear whether it is in play.
-The default rollout attitude is wings level, which keeps `beta` at zero and the comparison
-longitudinal; roll it with `--attitude` to bring the lateral model in.
+The old matrix is the new one with `beta` negated — a perfectly valid rotation, of the wrong
+angle, which is why nothing ever looked broken. Its first column, the direction the relative wind
+blows along and therefore the axis drag acts on, was `[ca*cb, -sb, sa*cb]`, while `alpha` and
+`beta` already fix that direction as `[ca*cb, +sb, sa*cb]`. So drag pushed *along* the sideslip
+instead of against it: at `beta = 90°` the aeroplane's drag became thrust. The model also
+contradicted itself, independently of JSBSim — `beta = asin(v/Va)` and the signs of `CY`, `CMx`
+and `CMz` in the polynomials are all standard, so the rotation was the piece out of step, and the
+coefficient tables were right as they stood.
+
+Only the forces were affected, and only through `sin(beta)`: `2*Y*cos(alpha)*sin(beta)` in x,
+`2*D*sin(beta)` in y, `2*Y*sin(alpha)*sin(beta)` in z. Moments are applied directly in body axes
+and were always correct. At `beta = 0` the two matrices are identical, so nothing in symmetric
+flight moves: the altitude task, every longitudinal result and ground effect are untouched.
+Sideslip is not: attitude tasks that use rudder or aileron, the named manoeuvres, and every
+turbulence run, since Dryden's lateral component puts `beta` off zero at every step. The LQR gains
+were derived from a linearisation whose `Y_beta` was off by `2*D`, and the checkpoints were
+trained against the old lateral aerodynamics.
+
+After the fix the sideslip column of check 2 sits at 1e-5 N against 1e-8 relative, the same as the
+zero-sideslip column, and a rolled rollout that develops `beta` up to 5° tracks JSBSim to 0.12° in
+`beta` and 0.056 m/s in `v` over three seconds — the lateral model validated for the first time.
 
 **The plant's 10 ms step, not JSBSim, dominates the rollout difference.** At the configured step
 the two part by 5.3e-2 m/s at half a second; with the plant at 0.5 ms the same rollout agrees to

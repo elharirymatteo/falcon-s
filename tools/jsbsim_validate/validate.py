@@ -7,8 +7,9 @@ Five checks, cheapest first, so that a failure in an early one explains the late
   1 coefficients   JSBSim's tables against the FALCON-S polynomial they were built from.
                    Isolates table interpolation error from everything else.
   2 aero loads     body-frame aerodynamic force and moment at matched (alpha, beta, V).
-                   Run at beta = 0 and at beta != 0, because the two simulators do not agree
-                   on the sign of the sideslip terms in the wind-to-body rotation.
+                   Run at beta = 0 and at beta != 0: sideslip is where this tool found the
+                   wind-to-body rotation carrying the wrong sign of beta, and the second column
+                   is what keeps that from coming back.
   3 rollout OGE    the validation proper: from an arbitrary altitude and attitude, high enough
                    that FALCON-S's ground effect is inactive. Flown twice, at the plant's
                    configured step and at a refined one, because the plant's own time-step error
@@ -173,15 +174,16 @@ def falcons_aero_loads(coeffs: dict, Q: float, wing: dict, alpha: float, beta: f
     """Body-frame aerodynamic force and moment, transcribed from the CPU plant.
 
     Mirrors AircraftForcesAndMoments.compute_aerodynamic_{forces,moments}_from_coeffs in
-    falcons/sim/cpu/physics/forces_moments.py, including its wind-to-body rotation. That
-    rotation is the one difference from JSBSim this tool cannot paper over: see check 2.
+    falcons/sim/cpu/physics/forces_moments.py, including its wind-to-body rotation. Keep the
+    rotation below identical to the plant's: check 2 is what caught the sideslip sign it used to
+    carry, and it can only catch the next one if this is a faithful copy.
     """
     S, b, c = wing["area"], wing["span"], wing["mac"]
     D, Y, L = Q * S * coeffs["CD"], Q * S * coeffs["CY"], Q * S * coeffs["CL"]
     ca, sa, cb, sb = np.cos(alpha), np.sin(alpha), np.cos(beta), np.sin(beta)
-    wind_to_body = np.array([[ca * cb, ca * sb, -sa],
-                             [-sb, cb, 0.0],
-                             [sa * cb, sa * sb, ca]])
+    wind_to_body = np.array([[ca * cb, -ca * sb, -sa],
+                             [sb, cb, 0.0],
+                             [sa * cb, -sa * sb, ca]])
     force = wind_to_body @ np.array([-D, Y, -L])
     moment = np.array([coeffs["Cl"] * Q * S * b,
                        coeffs["Cm"] * Q * S * c,
@@ -684,7 +686,9 @@ def main() -> None:
                                            ("Fz", "N", "Fz_N"), ("Mx", "N*m", "My_Nm"),
                                            ("My", "N*m", "My_Nm"), ("Mz", "N*m", "My_Nm")]])
     print("  Spans are the lift and pitching moment over the same alpha sweep, so `max %` is the "
-          "error\n  against the load the airframe actually carries.")
+          "error\n  against the load the airframe actually carries. The two beta blocks should "
+          "agree with each\n  other: a sideslip-only discrepancy means the wind-to-body rotation "
+          "again.")
 
     print(f"\n3 rollout out of ground effect, {args.seconds:.0f} s from h = {args.altitude:.0f} m")
     oge = rollout(args.plane, args.aircraft, args.altitude, euler, uvw, pqr,
@@ -819,13 +823,14 @@ def figure_rollout(path: Path, oge: pd.DataFrame, refined: pd.DataFrame,
 
 
 def figure_aero(path: Path, coefficients: pd.DataFrame, out: Path, plane: str) -> Path:
-    """Claim two: the aerodynamic model transferred, and where it did not.
+    """Claim two: the aerodynamic model transferred.
 
     Left, the coefficients themselves from both sources — the check that a table was built right
     at all. Middle, what is left over, which is bilinear interpolation and nothing else. Right,
     the body-frame load error against the load being carried, at zero sideslip and at ten degrees
-    of it: the forces climb by four decades and the moments do not, which is the wind-to-body
-    sideslip sign.
+    of it. Both columns now sit at round-off; when the plant's wind-to-body rotation still had
+    beta the wrong way round, the sideslip forces stood seven decades above the rest of the
+    panel while the moments did not move, which is what localised the fault.
     """
     import matplotlib.pyplot as plt
     figure, axes = plt.subplots(1, 3, figsize=(7.0, 2.4))

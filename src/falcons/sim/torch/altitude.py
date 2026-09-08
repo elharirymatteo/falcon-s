@@ -222,7 +222,7 @@ class AltitudeEnv:
             mu_d = t1 - t2
             D = D * mu_d * mu_l**2; L = L * mu_l
         Fw = torch.stack([-D, Y, -L], dim=-1)
-        q_aero = quat_rpy(torch.zeros_like(alpha), alpha, beta)
+        q_aero = quat_rpy(torch.zeros_like(alpha), alpha, -beta)   # -beta: see the CPU plant
         Fb_aero = quat_rotate_inv(q_aero, Fw)
         grav = torch.zeros_like(self.vel); grav[:, 2] = self.g
         Fb_g = self.mass * quat_rotate_inv(self.quat, grav)
