@@ -856,31 +856,43 @@ def figure_aero(path: Path, coefficients: pd.DataFrame, out: Path, plane: str) -
     axes[1].legend(ncol=2, loc="lower center", framealpha=1.0, facecolor="white",
                    edgecolor="0.8", frameon=True)
 
-    # One colour per series rather than one per quantity: with four curves over eight decades,
-    # matching colours and different dashes is harder to read than four plain colours.
-    series = [(0.0, "force", "tab:blue", "o", "-"), (0.0, "moment", "tab:green", "o", "-"),
-              (10.0, "force", "tab:red", "s", (0, (3, 2))),
-              (10.0, "moment", "tab:orange", "s", (0, (3, 2)))]
-    for beta_deg, quantity in ((0.0, None), (10.0, None)):
+    # Colour carries the quantity and marker the sideslip, which the key below reads off in four
+    # entries instead of the six their cross product would need. The y range is fixed from
+    # round-off up to the whole load with a line at 1 %, instead of autoscaling: every curve now
+    # sits in the round-off band, and an axis zoomed into that band shows floating-point wiggle as
+    # though it were structure. Fixed, the panel reads as "six decades under anything that
+    # matters", leaves room for the key, and would show a future regression climbing towards the
+    # line rather than quietly rescaling it away.
+    worst = 0.0
+    for beta_deg, filled in ((0.0, True), (10.0, False)):
         loads = pd.read_csv(out / f"{plane}_loads_beta{beta_deg:.0f}.csv")
-        error = {"force": np.sqrt(sum(loads[f"d{a}_N"]**2 for a in ("Fx", "Fy", "Fz")))
-                          / loads["F_mag_N"],
-                 "moment": np.sqrt(sum(loads[f"d{a}_Nm"]**2 for a in ("Mx", "My", "Mz")))
-                           / loads["M_mag_Nm"]}
-        for beta, name, colour, marker, dashes in series:
-            if beta != beta_deg:
-                continue
-            # Open markers for the sideslip case: the two moment curves land on top of each
-            # other — sideslip moves the force error by seven decades and the moment error not
-            # at all — and a filled marker would hide the one underneath.
-            axes[2].semilogy(loads["alpha_deg"], error[name], color=colour, marker=marker,
-                             ms=3.4, ls=dashes, mfc="none" if beta else colour,
-                             label=f"{name}, beta = {beta:.0f} deg")
+        for name, keys, magnitude, colour in [
+                ("force", ("dFx_N", "dFy_N", "dFz_N"), "F_mag_N", "tab:blue"),
+                ("moment", ("dMx_Nm", "dMy_Nm", "dMz_Nm"), "M_mag_Nm", "tab:red")]:
+            error = np.sqrt(sum(loads[key]**2 for key in keys)) / loads[magnitude]
+            axes[2].semilogy(loads["alpha_deg"], error, color=colour, marker="o" if filled else "s",
+                             ms=3.4, ls="-" if filled else (0, (3, 2)),
+                             mfc=colour if filled else "none")
+            worst = max(worst, float(error.max()))
+    axes[2].axhline(1e-2, color="0.45", lw=0.8, ls=(0, (1, 2)))
+    axes[2].text(0.97, 1.4e-2, "1 % of the load", transform=axes[2].get_yaxis_transform(),
+                 ha="right", va="bottom", fontsize=7, color="0.35")
+    axes[2].set_ylim(1e-10, max(3.0, worst * 3.0))     # never clip a regression off the top
     axes[2].set(xlabel="alpha [deg]", ylabel="|error| / |load|")
     axes[2].set_title("load error at matched states")
-    # Framed and opaque, in the empty decades between the two bands of data.
-    axes[2].legend(loc="center left", framealpha=1.0, facecolor="white", edgecolor="0.8",
-                   frameon=True)
+    # A factorised key: colour names the quantity, marker names the sideslip. The cross product
+    # would be four entries saying two things, and the dotted line is labelled where it is drawn.
+    from matplotlib.lines import Line2D
+    axes[2].legend(handles=[Line2D([], [], color="tab:blue", label="force"),
+                            Line2D([], [], color="tab:red", label="moment"),
+                            Line2D([], [], color="0.35", ls="none", marker="o", ms=3.4,
+                                   label="beta = 0"),
+                            Line2D([], [], color="0.35", ls="none", marker="s", ms=3.4,
+                                   mfc="none", label="beta = 10 deg")],
+                   # In the empty decades between the curves and the 1 % line, so it
+                   # crosses neither.
+                   loc="center left", ncol=1, handletextpad=0.5, labelspacing=0.3,
+                   borderpad=0.3)
 
     figure.tight_layout(pad=0.4)
     return _save(figure, path)
