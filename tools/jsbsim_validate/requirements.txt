@@ -1,0 +1,3 @@
+# Deliberately not in requirements.lock: this is an optional side tool, and the reproduction
+# environment recorded there should not grow a dependency the benchmark never imports.
+jsbsim==1.3.1

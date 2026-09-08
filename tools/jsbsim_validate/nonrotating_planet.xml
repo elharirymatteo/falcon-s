@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!-- Earth with its rotation and its equatorial bulge switched off, loaded by validate.py through
+     FGFDMExec::LoadPlanet before the aircraft.
+
+     JSBSim integrates in an earth-centred frame and so carries Coriolis and centrifugal terms that
+     FALCON-S, a flat non-rotating earth, does not. Left on, they are the noise floor of every
+     rollout comparison: 0.034 m/s^2 of centrifugal, which can be absorbed into a matched gravity,
+     and 2*omega*V of Coriolis, which has a direction and cannot. With rotation_rate at zero both
+     vanish and the two simulators agree to machine precision on everything lateral.
+
+     J2 = 0 as well, which makes gravity a plain inverse square: with no bulge the WGS-84 and
+     standard gravity models coincide, so simulation/gravity-model stops mattering. What remains is
+     that JSBSim's gravity falls off with altitude while FALCON-S's is constant — 2*g*dh/R, about
+     1e-4 m/s^2 over a hundred metres of climb, four decades below anything else measured here.
+
+     GM, the radii and the mass are Earth's real values (WGS-84, IERS), so airspeeds, altitudes and
+     air density all keep their usual meaning. -->
+<planet name="earth-nonrotating">
+ <equatorial_radius unit="M">6378137.0</equatorial_radius>
+ <polar_radius unit="M">6356752.314245</polar_radius>
+ <rotation_rate unit="RAD/SEC">0.0</rotation_rate>
+ <GM unit="M3/SEC2">3.986004418e14</GM>
+ <J2>0.0</J2>
+</planet>
