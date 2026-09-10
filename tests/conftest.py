@@ -4,7 +4,31 @@ from pathlib import Path
 import pytest
 import torch
 
+from falcons.aircraft.config import PLANES, AircraftConfig
 from falcons.paths import RESULTS_DIR
+
+# Airframes whose OpenVSP derivative data has been extracted. The aerodynamic model is that data,
+# so an airframe without it cannot be built at all -- there is no fallback model any more. Tests
+# that need one of the others SKIP until its CSVs land, rather than failing.
+#
+# Reduced coverage is the honest cost of this: Airship_V7 is the DEFAULT airframe for the env,
+# warp and MPPI tests, so most of them are dark until V7's CSVs arrive. See plan.md Phase 1.
+ONLINE_PLANES = [p for p in PLANES if AircraftConfig(p).has_derivatives]
+OFFLINE_PLANES = [p for p in PLANES if p not in ONLINE_PLANES]
+
+
+def requires_derivatives(*planes):
+    """Skip mark for a test that needs these airframes' derivative data."""
+    missing = [p for p in planes if p not in ONLINE_PLANES]
+    return pytest.mark.skipif(
+        bool(missing),
+        reason=f"no OpenVSP derivative CSVs yet for {', '.join(missing)} (plan.md Phase 1)",
+    )
+
+
+def plane_params(planes=None):
+    """`pytest.param` list over airframes, each skipped if its data is absent."""
+    return [pytest.param(p, marks=requires_derivatives(p)) for p in (planes or PLANES)]
 
 
 def pytest_collection_modifyitems(config, items):

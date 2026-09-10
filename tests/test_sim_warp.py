@@ -15,6 +15,11 @@ import pytest
 import torch
 import warp as wp
 
+from conftest import requires_derivatives
+
+# Every test here builds Airship_V7, whose OpenVSP data has not been extracted yet.
+pytestmark = requires_derivatives("Airship_V7")
+
 from falcons.aircraft.params import load_params
 from falcons.sim.warp.aircraft import Aircraft
 from falcons.sim.warp.altitude_obs import compute_obs

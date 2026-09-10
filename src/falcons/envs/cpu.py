@@ -129,12 +129,12 @@ class CpuEnv:
 
     def check_done(self):
         # Check if plane has crashed into water/ground
-        if -self.airship.state["position"][2] + self.airship.VP['wing']['cg_offset_vector'][2] < 0:
+        if -self.airship.state["position"][2] < 0:
             self.info["termination_reasons"] = "Crashed"
         # Check if plane has achieved the attack angle limit, stall also prevents the plane from flying backwards
         elif (
             hasattr(self.airship, 'alpha') and 
-            np.abs(self.airship.alpha * 180 / np.pi) > 1.5 * self.airship.AP['stall_angle_deg']
+            np.abs(np.degrees(self.airship.alpha)) > self.airship.AP['alpha_max_deg']
         ):
             self.info["termination_reasons"] = "Stalled"
         # Check if plane has reached low airspeed and considered to be in a stall

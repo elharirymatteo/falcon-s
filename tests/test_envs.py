@@ -7,7 +7,11 @@ import numpy as np
 import pytest
 
 torch = pytest.importorskip("torch")
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="warp env needs CUDA")
+from conftest import requires_derivatives
+
+# Every test here builds Airship_V7, whose OpenVSP data has not been extracted yet.
+pytestmark = [pytest.mark.skipif(not torch.cuda.is_available(), reason="warp env needs CUDA"),
+              requires_derivatives("Airship_V7")]
 
 
 def test_env_runs_and_autoresets_clean():

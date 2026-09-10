@@ -1,5 +1,5 @@
 """Pure-torch batched altitude-keeping env -- a no-warp port of WarpAltitudeEnv for cross-backend
-validation. Same dynamics (poly aero + rate damping + thrust + gravity), same actuator model
+validation. Same dynamics (OpenVSP derivative aero + thrust + gravity), same actuator model
 (scale->2nd/1st-order RK45), same DP-RK45 rigid-body integrator (forces frozen per step), same 11-dim
 obs + reward + termination + reference ramp as the warp stack. Goal: train PPO here and check it
 converges to the same RMSE/robustness -> the warp result isn't a warp-kernel artifact.
@@ -8,11 +8,10 @@ Quaternion convention matches warp: [x, y, z, w]. Runs 4096 envs on the GPU in p
 Validate one-step parity vs warp before trusting training (see __main__).
 """
 import numpy as np
-import pandas as pd
 import torch
 
 from falcons.aircraft.config import AircraftConfig
-from falcons.aircraft.params import load_params, PropulsionParameters
+from falcons.aircraft.params import DerivativeAeroParameters, PropulsionParameters, load_params
 from falcons.sim.torch.wind import TorchDryden
 
 TRIM_THROTTLE = 0.45
@@ -27,11 +26,72 @@ def isa_density(h):
     return p / (R * T)
 
 
-def safe_pow(base, exp):
-    """base[N,1] ** exp[K] -> [N,K], correct for negative base + integer exp (avoids NaN)."""
-    absp = base.abs() ** exp                                  # base.abs()>=0 safe; 0**0=1
-    sign = torch.where((exp.long() % 2 == 0), torch.ones_like(exp), torch.sign(base))
-    return sign * absp
+V_FLOOR = 0.1     # airspeed floor for the rate non-dimensionalisation; see the CPU reference
+
+_TORCH_TABLES = {}
+
+
+def _tables(params, device, dtype):
+    """The derivative set as tensors, built once per (set, device, dtype)."""
+    key = (id(params), str(device), dtype)
+    if key not in _TORCH_TABLES:
+        t = lambda a: torch.as_tensor(np.ascontiguousarray(a), device=device, dtype=dtype)
+        _TORCH_TABLES[key] = (t(params.free), t(params.hc), t(params.ge_increment), t(params.k_ind))
+    return _TORCH_TABLES[key]
+
+
+def torch_coefficients(params, span, mac, ge_enable, device, dtype,
+                       alpha, beta, v, elevator, aileron, rudder, p, q, r, h):
+    """Batched OpenVSP derivative model. Mirrors
+    `falcons.sim.cpu.physics.aerodynamics.DerivativeAerodynamics.coefficients` term for term;
+    `tests/test_aero_parity.py` holds the two together.
+
+    Angles and deflections RADIANS, rates rad/s, `h` metres positive up. Returns
+    (CD, CS, CL, Cl, Cm, Cn), each [N].
+    """
+    from falcons.aircraft.params import IDX
+
+    free, hc, inc, k_tab = _tables(params, device, dtype)
+
+    v_c = torch.clamp(v, min=V_FLOOR)
+    p_hat = p * span / (2.0 * v_c)
+    q_hat = q * mac / (2.0 * v_c)
+    r_hat = r * span / (2.0 * v_c)
+
+    da = alpha - params.alpha_run
+    de = elevator - params.de_run
+
+    if ge_enable:
+        # Bracket h/c in the sweep and interpolate the increment. Clamping the weight is what
+        # makes this correct at both ends: held below the sweep, and exactly zero increment at
+        # the top row and above, which is free air.
+        hc_q = h / mac
+        i = torch.clamp(torch.searchsorted(hc, hc_q.contiguous(), right=True) - 1,
+                        0, hc.numel() - 2)
+        lo, hi = hc[i], hc[i + 1]
+        w = torch.clamp((hc_q - lo) / (hi - lo), 0.0, 1.0).unsqueeze(-1)
+        c = free + inc[i] * (1.0 - w) + inc[i + 1] * w            # [N, N_CHANNELS]
+        w0 = w.squeeze(-1)
+        k_ind = k_tab[i] * (1.0 - w0) + k_tab[i + 1] * w0
+    else:
+        c = free.expand(alpha.shape[0], -1)
+        k_ind = torch.full_like(alpha, float(params.k_ind_free))
+
+    g = lambda name: c[:, IDX[name]]
+
+    cl_alpha = g("CL_Alpha")
+    CD = (g("CD_Total") + g("CD_Alpha") * da
+          + k_ind * (cl_alpha * da) ** 2
+          + g("CD_elevator") * de + g("CD_q") * q_hat)
+    CS = (g("CS_Beta") * beta + g("CS_aileron") * aileron + g("CS_rudder") * rudder
+          + g("CS_p") * p_hat + g("CS_r") * r_hat)
+    CL = (g("CL_Total") + cl_alpha * da + g("CL_elevator") * de + g("CL_q") * q_hat)
+    Cl = (g("CMl_Beta") * beta + g("CMl_aileron") * aileron + g("CMl_rudder") * rudder
+          + g("CMl_p") * p_hat + g("CMl_r") * r_hat)
+    Cm = (g("CMm_Total") + g("CMm_Alpha") * da + g("CMm_elevator") * de + g("CMm_q") * q_hat)
+    Cn = (g("CMn_Beta") * beta + g("CMn_aileron") * aileron + g("CMn_rudder") * rudder
+          + g("CMn_p") * p_hat + g("CMn_r") * r_hat)
+    return CD, CS, CL, Cl, Cm, Cn
 
 
 def quat_normalize(q):
@@ -104,8 +164,8 @@ class AltitudeEnv:
 
         self.aircraft = cfg.get("aircraft", "Airship_V7")
         raw = AircraftConfig(self.aircraft).load()
-        self.stall_deg = float(raw["aero_params"]["stall_angle_deg"])
-        self.alpha_limit = float(np.radians(1.5 * self.stall_deg))
+        self.alpha_soft_deg = float(raw["aero_params"]["alpha_soft_deg"])
+        self.alpha_limit = float(np.radians(raw["aero_params"]["alpha_max_deg"]))
         self.base_vel = cfg.get("base_vel", float(raw["default_initial_state"]["linear_vel"][0]))
         self.target_va = cfg.get("target_airspeed", self.base_vel)
         self.va_min = cfg.get("va_min", 0.6 * self.base_vel); self.va_stall = self.va_min
@@ -116,13 +176,9 @@ class AltitudeEnv:
         VP = raw["vehicle_params"]; wing = VP["wing"]
         self.S = float(wing["area"]); self.b = float(wing["span"]); self.c = float(wing["mac"])
         self.taper = float(wing["taper_ratio"]); self.AR = float(wing["aspect_ratio"])
-        self.cg_z = float(wing["cg_offset_vector"][2])
         self.mass = float(VP["mass"])
         self.J = torch.tensor(VP["inertia_matrix"], dtype=torch.float32, device=dev)
         self.Jinv = torch.inverse(self.J)
-        self.Clp = float(raw["aero_params"].get("Clp", 0.0))
-        self.Cmq = float(raw["aero_params"].get("Cmq", 0.0))
-        self.Cnr = float(raw["aero_params"].get("Cnr", 0.0))
         # actuator params
         surf = VP["actuator_system"]["aero_surfaces"]["elevator"]
         self.omega0 = float(surf["omega_0"]); self.zeta = float(surf["zeta"])
@@ -139,10 +195,8 @@ class AltitudeEnv:
         self.tvi = tvi / tvi.norm()
         self.km, self.kq, self.ko, self.Cp, self.Sp = pp.k_m, pp.k_q, pp.k_o, pp.C_p, pp.Sp
 
-        # poly aero terms (CSV: alpha,beta,delta_e,delta_a,delta_r | CD,CY,CL,CMx,CMy,CMz)
-        poly = pd.read_csv(raw["aero_params"]["poly_params_file"]).values.astype(np.float32)
-        self.exps = torch.tensor(poly[:, :5], device=dev)               # [30,5]
-        self.pcoef = torch.tensor(poly[:, 5:11], device=dev)            # [30,6] CD,CY,CL,Cl,Cm,Cn
+        # OpenVSP derivative set + its measured ground-effect sweep
+        self.aero = DerivativeAeroParameters.from_config(raw)
 
         self.num_obs = 11; self.num_act = 2
         self._alloc()
@@ -203,24 +257,18 @@ class AltitudeEnv:
         beta = torch.asin((asv[:, 1] / (Va + 1e-6)).clamp(-1, 1))
         rho = isa_density(-self.pos[:, 2])
         Q = 0.5 * rho * Va * Va
-        # poly coeffs (alpha,beta in deg; deflections in deg)
-        bases = torch.stack([alpha * 180.0 / np.pi, beta * 180.0 / np.pi, self.elev, self.ail, self.rud], dim=-1)
-        term = torch.ones(self.n, self.exps.shape[0], device=self.device)
-        for ci in range(5):
-            term = term * safe_pow(bases[:, ci:ci+1], self.exps[:, ci])
-        coeffs = term @ self.pcoef                              # [N,6] CD,CY,CL,Cl,Cm,Cn
-        CD, CY, CL, Cl, Cm, Cn = coeffs.unbind(dim=-1)
-        # ground effect
+        # OpenVSP derivative set. Deflections are stored in DEGREES (scaled from the JSON's
+        # min/max_deflection) and the set is per radian, so they convert here. Ground effect is
+        # inside the coefficients now -- no mu_l/mu_d factor on the forces.
+        CD, CY, CL, Cl, Cm, Cn = torch_coefficients(
+            self.aero, self.b, self.c, ge_enable=self.in_ground_effect,
+            device=self.device, dtype=self.vel.dtype,
+            alpha=alpha, beta=beta, v=Va,
+            elevator=torch.deg2rad(self.elev), aileron=torch.deg2rad(self.ail),
+            rudder=torch.deg2rad(self.rud),
+            p=self.omega[:, 0], q=self.omega[:, 1], r=self.omega[:, 2],
+            h=-self.pos[:, 2])
         D = Q * self.S * CD; Y = Q * self.S * CY; L = Q * self.S * CL
-        if self.in_ground_effect:
-            h = (-self.pos[:, 2] + self.cg_z).abs() / self.b
-            mu_l = 1.0 + (1.0 - 2.25 * (self.taper**0.00273 - 0.997) * (self.AR**0.717 + 13.6)) * \
-                (288.0 * h.clamp_min(1e-6)**0.787 * torch.exp(-9.14 * h.clamp_min(1e-6)**0.327)) / (self.AR**0.882)
-            t1 = 1.0 - (1.0 - 0.157 * max(self.taper**0.775 - 0.373, 0.0) * max(self.AR**0.417 - 1.27, 0.0)) * \
-                torch.exp(-4.74 * h.clamp_min(1e-6)**0.814)
-            t2 = h*h * torch.exp(-3.88 * h.clamp_min(1e-6)**0.758)
-            mu_d = t1 - t2
-            D = D * mu_d * mu_l**2; L = L * mu_l
         Fw = torch.stack([-D, Y, -L], dim=-1)
         q_aero = quat_rpy(torch.zeros_like(alpha), alpha, -beta)   # -beta: see the CPU plant
         Fb_aero = quat_rotate_inv(q_aero, Fw)
@@ -234,11 +282,9 @@ class AltitudeEnv:
         Mprop = -self.kq * (self.ko * self.thr)**2
         Mb_thrust = torch.cross(self.td1[None, :].expand_as(F1), F1, dim=-1) + \
                     torch.cross(self.td2[None, :].expand_as(F1), F1, dim=-1)            # +Mprop -Mprop cancel
+        # No separate rate-damping term: CMl_p, CMm_q and CMn_r are measured members of the
+        # derivative set and are already in Cl/Cm/Cn above.
         Mb_aero = torch.stack([Cl * Q * self.S * self.b, Cm * Q * self.S * self.c, Cn * Q * self.S * self.b], dim=-1)
-        Vc = Va.clamp_min(1.0)
-        Mb_aero[:, 0] += self.Clp * (self.omega[:, 0] * self.b / (2*Vc)) * Q * self.S * self.b
-        Mb_aero[:, 1] += self.Cmq * (self.omega[:, 1] * self.c / (2*Vc)) * Q * self.S * self.c
-        Mb_aero[:, 2] += self.Cnr * (self.omega[:, 2] * self.b / (2*Vc)) * Q * self.S * self.b
         Fb = Fb_aero + Fb_g + Fb_thrust
         Mb = Mb_aero + Mb_thrust
         self.Va_prev = Va
@@ -306,8 +352,8 @@ class AltitudeEnv:
         ov_pen = torch.where(h_err > self.ov_thr, -(((h_err - self.ov_thr)/self.ov_thr)**2).clamp(max=1.0), torch.zeros_like(h_err))
         a_pen = torch.zeros_like(h_err)
         if self.alpha_safety_w > 0:
-            ad = alpha.abs()*180/np.pi; onset = self.alpha_safety_start*self.stall_deg
-            span = max(self.stall_deg - onset, 1e-3); ov = ((ad - onset)/span).clamp_min(0.0)
+            ad = alpha.abs()*180/np.pi; onset = self.alpha_safety_start*self.alpha_soft_deg
+            span = max(self.alpha_soft_deg - onset, 1e-3); ov = ((ad - onset)/span).clamp_min(0.0)
             a_pen = -(ov*ov).clamp(max=1.0)
         v_pen = torch.zeros_like(h_err)
         if self.va_safety_w > 0:
@@ -397,7 +443,7 @@ class AltitudeEnv:
 
         # termination: reason 1 crash, 2 stall (crash priority)
         reason = torch.zeros(self.n, dtype=torch.long, device=self.device)
-        crash = (-self.pos[:, 2] + self.cg_z) < 0.0
+        crash = -self.pos[:, 2] < 0.0
         stall = (alpha2.abs() > self.alpha_limit) | (Va2 < self.va_min)
         nan = ~torch.isfinite(self.pos).all(dim=-1)
         reason[stall] = 2; reason[crash | nan] = 1

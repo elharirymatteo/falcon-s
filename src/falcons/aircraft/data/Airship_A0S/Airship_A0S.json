@@ -24,12 +24,7 @@
       "area": 1.0,
       "mac": 0.36,
       "aspect_ratio": 7.53,
-      "taper_ratio": 0.39,
-      "cg_offset_vector": [
-        -0.09,
-        0.0,
-        0.0
-      ]
+      "taper_ratio": 0.39
     },
     "actuator_system": {
       "aero_surfaces": {
@@ -190,12 +185,9 @@
     }
   },
   "aero_params": {
-    "type": "polynomial",
-    "poly_params_file": "A0_V8_poly_params_refit_corrected.csv",
-    "stall_angle_deg": 13.0,
-    "Clp": -0.4,
-    "Cmq": -10.0,
-    "Cnr": -0.25
+    "derivative_set": "openvsp",
+    "alpha_max_deg": 19.5,
+    "alpha_soft_deg": 13.0
   },
   "environment_params": {
     "g": 9.81,

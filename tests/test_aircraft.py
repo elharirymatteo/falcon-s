@@ -51,22 +51,31 @@ def test_volantex_is_online():
     assert AircraftConfig("Volantex_Ranger").has_derivatives
 
 
-@pytest.mark.parametrize("ac", PLANES)
+# Absolute paths (machine-specific) and the bulk derivative tables are excluded from the archive
+# comparison. The tables are the CSVs' own content -- duplicating 11x27 coefficients into a golden
+# config would gain nothing that `test_derivative_aero.py` does not already check, and would go
+# stale on every re-extraction. The scalars derived from the data (the operating point, the
+# reference geometry, k_ind_free) ARE compared, because those are what a bad CSV would move.
+ARCHIVE_EXCLUDES = ("poly_params_file", "derivatives_file", "ge_derivatives_file",
+                    "free", "hc", "ge_increment", "k_ind")
+
+
+@pytest.mark.parametrize("ac", [pytest.param(a, marks=_skip_without_derivatives(a)) for a in PLANES])
 def test_params_match_archive(ac):
     gold = json.load(open(GOLD / f"{ac}.json"))
     got = _todict(load_params(ac))
-    # the only permitted difference is the poly-file path, which now lives inside the package
     for d in (gold["params"], got):
-        d["aero_params"].pop("poly_params_file", None)
+        for k in ARCHIVE_EXCLUDES:
+            d["aero_params"].pop(k, None)
     assert got == gold["params"]
 
 
 # A config that omits a required key would inherit Airship_V7's value for it, so the loader
-# rejects it. Motor topology and the rate-damping derivatives stay optional by design.
+# rejects it. Motor topology stays optional by design.
 
 def test_every_shipped_aircraft_is_complete():
     for name in PLANES:
-        AircraftConfig(name).load()
+        AircraftConfig(name).load()          # load() itself does not need the derivative CSVs
 
 
 def _stage(name, tmp_path, mutate, with_derivatives=False):
@@ -127,7 +136,15 @@ def test_an_airframe_without_derivative_data_still_loads(tmp_path):
     assert cfg.load()["aero_params"]["derivatives_file"].endswith("Navion_derivatives.csv")
 
 
-def test_motor_topology_and_rate_damping_stay_optional():
+def test_motor_topology_stays_optional():
     single = AircraftConfig("Volantex_Ranger").load()["vehicle_params"]["actuator_system"]["motors"]
     assert set(single) == {"centre_motor"}          # no left/right, and it still loads
-    assert "Clp" not in AircraftConfig("Navion").load()["aero_params"]
+
+
+def test_rate_damping_is_not_a_config_knob_any_more():
+    """Clp/Cmq/Cnr were JSON scalars because the polynomial model had no rate derivatives. The
+    OpenVSP set measures CMl_p, CMm_q and CMn_r, so a JSON carrying the old keys would be
+    double-counting -- they must be gone from every airframe, not merely ignored."""
+    for name in PLANES:
+        aero = AircraftConfig(name).load()["aero_params"]
+        assert not {"Clp", "Cmq", "Cnr"} & set(aero), f"{name} still declares rate damping"

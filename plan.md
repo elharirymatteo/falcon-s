@@ -101,7 +101,47 @@ key order* (`cpu/aircraft.py:110,121` just take `list(...keys())`) and unchecked
 
 Suite after Phase 2: **163 passed, 6 skipped, 1 xfailed**.
 
-### Phase 3 — next
+### Phase 3 — DONE
+
+The model in all four backends, plus 3b (`cg_offset_vector`) and 3c (alpha thresholds).
+`tests/test_aero_parity.py` is new and is the thing to trust: it holds warp and torch to the CPU
+reference term for term, over five conditions (the run point, deep GE, mid-sweep, exactly the
+table top, and below both the V and GE floors), with ground effect on and off. Warp matches at
+float32 tolerance, torch at 1e-11.
+
+Refinements made at the re-assessment gate:
+
+1. **No warp `wp.struct` mirror of `AeroInputs`.** Warp kernels have no keyword arguments, so a
+   struct cannot give warp the named safety the CPU/torch `NamedTuple` gives -- it only moves the
+   positional risk to the struct's construction. `compute_all_coeffs` takes explicit named
+   parameters instead, and Phase 2's promise is withdrawn rather than met cosmetically.
+2. **`C_L_ige`/`C_D_ige` renamed to `C_*_free`** across warp (`aircraft.py`, `physics.py`,
+   `history.py`). They are history-only, never read for physics, and "in ground effect" became a
+   lie once GE moved inside the coefficients. The free-air pair costs almost nothing to compute
+   (no table lookup) and is the diagnostic the history plots.
+3. **`aspect_ratio`/`taper_ratio` kept** in the wing block though nothing reads them now. They
+   describe the wing; `cg_offset_vector` was a ground-effect implementation detail. Flagged, not
+   deleted. NOTE: Volantex's `aspect_ratio` 9.61 disagrees with `span^2/area` = 9.6026.
+4. **`tools/jsbsim_validate` is guarded, not ported.** Both entry points raise `_NOT_PORTED`
+   naming plan.md Phase 4. The polynomial CSVs and `AircraftConfig.poly_path` are KEPT: they are
+   inert data, and deleting the cross-validation tool's source before its replacement exists
+   would be careless. No dead code path remains in any plant.
+5. **`cmd_check` picks an airframe that has data** instead of hardcoding Airship_V7, so the smoke
+   check does not fail for a reason unrelated to what it checks.
+
+Also landed: `tests/conftest.py` grew `ONLINE_PLANES` / `requires_derivatives()` / `plane_params()`,
+and the config goldens were regenerated for Volantex (Phase 5A). `ARCHIVE_EXCLUDES` in
+`test_aircraft.py` keeps the 11x27 tables and absolute paths out of the golden while still
+comparing the scalars a bad CSV would move.
+
+> **Coverage is materially reduced until the other four CSVs land.** Airship_V7 is the default
+> airframe for `test_envs.py`, `test_sim_warp.py`, the MPPI tests and most of `test_controllers.py`,
+> and the aero model IS the data, so all of those now skip: **59 skipped**, up from 6. This is the
+> direct cost of "replace outright" with one airframe extracted. Nothing is silently passing.
+
+Suite after Phase 3: **128 passed, 59 skipped, 1 xfailed** (`pytest -m "not slow"`).
+
+### Phase 4 — next
 
 ## Decisions taken (by the user, 2026-09-10)
 

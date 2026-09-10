@@ -12,8 +12,7 @@
       "area": 0.2733,
       "mac": 0.156667,
       "aspect_ratio": 9.61,
-      "taper_ratio": 0.80,
-      "cg_offset_vector": [-0.07, 0.0, 0.0]
+      "taper_ratio": 0.80
     },
     "actuator_system": {
       "aero_surfaces": {
@@ -106,12 +105,9 @@
       }
   },
   "aero_params": {
-    "type": "polynomial",
-    "poly_params_file": "volantex_ranger_poly_params.csv",
-    "stall_angle_deg": 13.0,
-    "Clp": -0.5,
-    "Cmq": -12.0,
-    "Cnr": -0.1
+    "derivative_set": "openvsp",
+    "alpha_max_deg": 19.5,
+    "alpha_soft_deg": 13.0
   },
   "environment_params": {
     "g": 9.81,

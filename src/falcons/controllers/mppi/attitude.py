@@ -93,7 +93,7 @@ class MPPIAttitudeExecutor:
         self.env = env
         self.mppi = MPPIAttitudeControl(MPPI_SPECS,
                                         {"AP": AP, "VP": VP, "CL": co["control_limits"], "EP": EP},
-                                        phi_s, hdot_s, va_s, VP.stall_angle)
+                                        phi_s, hdot_s, va_s, VP.alpha_max)
         # Pin the sampling noise. The warp aircraft base otherwise seeds this from entropy. This
         # alone does not make a rollout reproducible: the rollout-cost reduction in kernels.py uses
         # wp.atomic_add, whose thread ordering is not deterministic, so a single rollout is one

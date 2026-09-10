@@ -72,25 +72,15 @@ def _convert_inputs_sequences_into_trajectories(number_of_iterations:wp.int32,
                                                 elevator:wp.array(dtype=wp.float32),
                                                 aileron:wp.array(dtype=wp.float32),
                                                 rudder:wp.array(dtype=wp.float32),
-                                                alpha_exp:wp.array(dtype=wp.float32),
-                                                beta_exp:wp.array(dtype=wp.float32),
-                                                elevator_exp: wp.array(dtype=wp.float32),
-                                                aileron_exp: wp.array(dtype=wp.float32),
-                                                rudder_exp: wp.array(dtype=wp.float32),
-                                                CD_coefs: wp.array(dtype=wp.float32),
-                                                CL_coefs: wp.array(dtype=wp.float32),
+                                                AP: AerodynamicsParametersStruct,
                                                 C_L: wp.array(dtype=wp.float32),
                                                 C_D: wp.array(dtype=wp.float32),
                                                 WP: WingParametersStruct,
                                                 D_tot: wp.array(dtype=wp.float32),
                                                 L_tot: wp.array(dtype=wp.float32),
-                                                in_ground_effect: bool,
-                                                CY_coefs: wp.array(dtype=wp.float32),
+                                                ge_enable: bool,
                                                 C_Y: wp.array(dtype=wp.float32),
                                                 Y_tot: wp.array(dtype=wp.float32),
-                                                CMx_coefs: wp.array(dtype=wp.float32),
-                                                CMy_coefs: wp.array(dtype=wp.float32),
-                                                CMz_coefs: wp.array(dtype=wp.float32),
                                                 Cl: wp.array(dtype=wp.float32),
                                                 Cm: wp.array(dtype=wp.float32),
                                                 Cn: wp.array(dtype=wp.float32),
@@ -129,9 +119,6 @@ def _convert_inputs_sequences_into_trajectories(number_of_iterations:wp.int32,
                                                 elevator_dot: wp.array(dtype=wp.float32),
                                                 aileron_dot: wp.array(dtype=wp.float32),
                                                 rudder_dot: wp.array(dtype=wp.float32),
-                                                Clp: wp.float32,
-                                                Cmq: wp.float32,
-                                                Cnr: wp.float32,
 
 ):
     tid = wp.tid()
@@ -172,33 +159,29 @@ def _convert_inputs_sequences_into_trajectories(number_of_iterations:wp.int32,
 
         # Step 3: Reset coefficients to zero
         C_L[tid] = 0.0
-        C_D[tid] = 0.0
-        C_Y[tid] = 0.0
-        Cl[tid] = 0.0
-        Cm[tid] = 0.0
-        Cn[tid] = 0.0
-
-        # Step 4: Compute all aerodynamic coefficients
-        temp_C_D, temp_C_Y, temp_C_L, temp_Cl, temp_Cm, temp_Cn = \
+        # Step 4: Compute all aerodynamic coefficients. Actuator states are in DEGREES and the
+        # derivative set is per radian, so they convert at the call, exactly as in the plant.
+        temp_C_D, temp_C_S, temp_C_L, temp_Cl, temp_Cm, temp_Cn, _cdf, _clf = \
             compute_all_coeffs(
-                alpha[tid], beta[tid], elevator_state[tid], aileron_state[tid], rudder_state[tid],
-                alpha_exp, beta_exp, elevator_exp, aileron_exp, rudder_exp,
-                CD_coefs, CL_coefs, CY_coefs, CMx_coefs, CMy_coefs, CMz_coefs,
-                C_L[tid], C_D[tid], C_Y[tid], Cl[tid], Cm[tid], Cn[tid]
+                AP, WP.span, WP.mac,
+                alpha[tid], beta[tid], Va[tid],
+                wp.radians(elevator_state[tid]), wp.radians(aileron_state[tid]),
+                wp.radians(rudder_state[tid]),
+                angular_vel[tid][0], angular_vel[tid][1], angular_vel[tid][2],
+                -position[tid][2], ge_enable
             )
 
         C_D[tid] = temp_C_D
-        C_Y[tid] = temp_C_Y
+        C_Y[tid] = temp_C_S
         C_L[tid] = temp_C_L
         Cl[tid] = temp_Cl
         Cm[tid] = temp_Cm
         Cn[tid] = temp_Cn
 
         # Step 5: Compute lift and drag forces
-        temp_D_tot, temp_Y_tot, temp_L_tot, _c_d_ige, _c_l_ige = \
+        temp_D_tot, temp_Y_tot, temp_L_tot = \
             compute_lift_and_drag_forces(
-                Q[tid], WP, C_D[tid], C_Y[tid], C_L[tid], D_tot[tid], Y_tot[tid], L_tot[tid],
-                in_ground_effect, position[tid]
+                Q[tid], WP, C_D[tid], C_Y[tid], C_L[tid], D_tot[tid], Y_tot[tid], L_tot[tid]
             )
 
         D_tot[tid] = temp_D_tot
@@ -209,8 +192,7 @@ def _convert_inputs_sequences_into_trajectories(number_of_iterations:wp.int32,
         temp_Fw_aero, temp_Mb_aero = \
             compute_aerodynamic_forces_and_moments(
                 D_tot[tid], Y_tot[tid], L_tot[tid], Cl[tid], Cm[tid], Cn[tid],
-                Q[tid], WP, Mac, angular_vel[tid], Va[tid], Clp, Cmq, Cnr,
-                Mb_aero[tid], Fw_aero[tid]
+                Q[tid], WP, Mac, Mb_aero[tid], Fw_aero[tid]
             )
 
         Fw_aero[tid] = temp_Fw_aero

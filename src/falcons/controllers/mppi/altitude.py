@@ -202,7 +202,7 @@ class MPPIAltitude:
             }
             
             # Check termination conditions using GPU-accelerated check
-            crashed, stalled = aircraft.check_termination(VP.WP.cg_offset_vector[2], 2*VP.stall_angle)
+            crashed, stalled = aircraft.check_termination(VP.alpha_max)
             
             if crashed:
                 print(f"Simulation ended at step {step}: Crashed into water")

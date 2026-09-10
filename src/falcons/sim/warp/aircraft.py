@@ -60,8 +60,8 @@ class Aircraft:
             
             self.history_C_L = wp.zeros(max_steps, device=self._device, dtype=wp.float32)
             self.history_C_D = wp.zeros(max_steps, device=self._device, dtype=wp.float32)
-            self.history_C_L_ige = wp.zeros(max_steps, device=self._device, dtype=wp.float32)
-            self.history_C_D_ige = wp.zeros(max_steps, device=self._device, dtype=wp.float32)
+            self.history_C_L_free = wp.zeros(max_steps, device=self._device, dtype=wp.float32)
+            self.history_C_D_free = wp.zeros(max_steps, device=self._device, dtype=wp.float32)
             self.history_Cl = wp.zeros(max_steps, device=self._device, dtype=wp.float32)
             self.history_Cm = wp.zeros(max_steps, device=self._device, dtype=wp.float32)
             self.history_Cn = wp.zeros(max_steps, device=self._device, dtype=wp.float32)
@@ -147,8 +147,8 @@ class Aircraft:
         self._Cl = wp.zeros((self._num_envs), device=self._device, dtype=wp.float32)
         self._Cm = wp.zeros((self._num_envs), device=self._device, dtype=wp.float32)
         self._Cn = wp.zeros((self._num_envs), device=self._device, dtype=wp.float32)
-        self._C_D_ige = wp.zeros((self._num_envs), device=self._device, dtype=wp.float32)
-        self._C_L_ige = wp.zeros((self._num_envs), device=self._device, dtype=wp.float32)
+        self._C_D_free = wp.zeros((self._num_envs), device=self._device, dtype=wp.float32)
+        self._C_L_free = wp.zeros((self._num_envs), device=self._device, dtype=wp.float32)
 
         # Force/moment intermediate buffers
         self._D_tot = wp.zeros((self._num_envs), device=self._device, dtype=wp.float32)
@@ -263,8 +263,8 @@ class Aircraft:
             self.history_Fb_g.zero_()
             self.history_C_L.zero_()
             self.history_C_D.zero_()
-            self.history_C_L_ige.zero_()
-            self.history_C_D_ige.zero_()
+            self.history_C_L_free.zero_()
+            self.history_C_D_free.zero_()
             self.history_Cl.zero_()
             self.history_Cm.zero_()
             self.history_Cn.zero_()
@@ -366,8 +366,8 @@ class Aircraft:
                 self._Cl,
                 self._Cm,
                 self._Cn,
-                self._C_D_ige,
-                self._C_L_ige,
+                self._C_D_free,
+                self._C_L_free,
 
                 # Force/moment arrays
                 self._D_tot,
@@ -398,23 +398,8 @@ class Aircraft:
                 self.VP.m,
                 self._ge_enabled,  # in_ground_effect
                 
-                # Aerodynamic coefficient arrays
-                self.AP.alpha_exp,
-                self.AP.beta_exp,
-                self.AP.elevator_exp,
-                self.AP.aileron_exp,
-                self.AP.rudder_exp,
-                self.AP.CD_coefs,
-                self.AP.CL_coefs,
-                self.AP.CY_coefs,
-                self.AP.CMx_coefs,
-                self.AP.CMy_coefs,
-                self.AP.CMz_coefs,
-                self.AP.Clp,
-                self.AP.Cmq,
-                self.AP.Cnr,
-
                 # Configuration structs
+                self.AP,
                 self.VP.WP,
                 self.VP.J,
                 self.VP.PP,
@@ -447,7 +432,7 @@ class Aircraft:
                     self._alpha, self._beta, self._Va, self._hr,
                     self._Fb, self._Mb, self._Fb_aero, self._Mb_aero,
                     self._Fb_thrust, self._Mb_thrust, self._Fb_g,
-                    self._C_L, self._C_D, self._C_L_ige, self._C_D_ige,
+                    self._C_L, self._C_D, self._C_L_free, self._C_D_free,
                     self._Cl, self._Cm, self._Cn,
                     self._actuator_states["elevator"],
                     self._actuator_states["aileron"],
@@ -462,7 +447,7 @@ class Aircraft:
                     self.history_Fb, self.history_Mb,
                     self.history_Fb_aero, self.history_Mb_aero,
                     self.history_Fb_thrust, self.history_Mb_thrust, self.history_Fb_g,
-                    self.history_C_L, self.history_C_D, self.history_C_L_ige, self.history_C_D_ige,
+                    self.history_C_L, self.history_C_D, self.history_C_L_free, self.history_C_D_free,
                     self.history_Cl, self.history_Cm, self.history_Cn,
                     self.history_elevator, self.history_aileron, self.history_rudder,
                     self.history_throttle_left, self.history_throttle_right,
@@ -500,7 +485,7 @@ class Aircraft:
         if hasattr(self, 'wind_model') and self.wind_model is not None:
             self.wind_model.seed((self.warp_seed.value if seed is not None else random_seed) + 2000)    
 
-    def check_termination(self, wing_z_offset: float, stall_angle: float):
+    def check_termination(self, alpha_max: float):
         """
         Check termination conditions on GPU and return flags.
         Returns: (crashed: bool, stalled: bool)
@@ -520,8 +505,7 @@ class Aircraft:
                 self._state["position"],
                 self._alpha,
                 env_idx,
-                wing_z_offset,
-                stall_angle,
+                alpha_max,
                 self._crashed_flag,
                 self._stalled_flag
             ],
@@ -548,8 +532,8 @@ class Aircraft:
             'Va': self.history_Va.numpy()[:n],
             'height ratio': self.history_hr.numpy()[:n],
             'Coef_f': np.column_stack([
-                self.history_C_L_ige.numpy()[:n],
-                self.history_C_D_ige.numpy()[:n]
+                self.history_C_L_free.numpy()[:n],
+                self.history_C_D_free.numpy()[:n]
             ]),
             'Coef_m': np.column_stack([
                 self.history_Cl.numpy()[:n],
@@ -559,8 +543,8 @@ class Aircraft:
             'oge_ige': np.column_stack([
                 self.history_C_L.numpy()[:n],
                 self.history_C_D.numpy()[:n],
-                self.history_C_L_ige.numpy()[:n],
-                self.history_C_D_ige.numpy()[:n]
+                self.history_C_L_free.numpy()[:n],
+                self.history_C_D_free.numpy()[:n]
             ])
         }
         

@@ -31,7 +31,25 @@ import numpy as np
 import pandas as pd
 
 from falcons.aircraft.config import AircraftConfig
-from falcons.sim.cpu.physics.aerodynamics import PolynomialAerodynamics
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# NOT PORTED YET to the OpenVSP derivative aero model.
+#
+# This tool exported the plant's POLYNOMIAL coefficients as JSBSim 2-D tables (alpha x control),
+# so JSBSim and FALCON-S could fly the same aeroplane. The polynomial model is gone: the plant is
+# now a linear derivative set about one VSPAERO operating point plus a measured ground-effect
+# sweep, which does not fit the 2-D table layout `check_layout` enforces. A linear set maps onto
+# JSBSim <function> blocks instead, which is a rewrite of the emitter rather than a tweak.
+#
+# See plan.md, Phase 4. Until then this tool refuses to run rather than exporting tables that no
+# longer describe the simulator.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+_NOT_PORTED = (
+    "tools/jsbsim_validate is not ported to the OpenVSP derivative aero model. It exported the "
+    "polynomial coefficients as JSBSim 2-D tables; the plant no longer has a polynomial. "
+    "Porting it means emitting <function> blocks for a linear derivative set -- see plan.md "
+    "Phase 4."
+)
 
 # 1 slug*ft^2 = 14.5939029372 kg * 0.3048^2 m^2. Inertia is written to the XML already in
 # slug*ft^2 because JSBSim's own KG*M2 conversion carries a ~9e-5 relative error, which lands
@@ -227,6 +245,7 @@ def build(plane: str, alpha_range: float, beta_range: float,
 
 
 def main() -> None:
+    raise SystemExit(_NOT_PORTED)
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--plane", default="Navion", help="FALCON-S airframe name")

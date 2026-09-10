@@ -3,13 +3,13 @@ import os
 from typing import Dict, Any
 
 import numpy as np
-import pandas as pd
 
 from falcons.sim.cpu.base import AircraftBase
 from falcons.sim.cpu.actuators import ActuatorSystem
 from falcons.sim.cpu.sensors import SensorSystem
 from falcons.sim.cpu.estimators import EstimatorSystem
 from falcons.aircraft.config import AircraftConfig
+from falcons.sim.aero_contract import check_surface_order
 
 class Aircraft(AircraftBase):
     """
@@ -39,15 +39,10 @@ class Aircraft(AircraftBase):
         self.EP = self.config['environment_params']
         self.IP = self.config['default_initial_state']
 
-        # Load polynomial parameters if the model type is 'polynomial'
-        self.poly_params = None
-        if self.AP.get('type') == 'polynomial':
-            try:
-                # load_config() already corrected the path - use it directly
-                poly_path = self.config['aero_params']['poly_params_file']
-                self.poly_params = pd.read_csv(poly_path)
-            except (FileNotFoundError, KeyError) as e:
-                raise ValueError(f"Polynomial aerodynamics requires poly_params file: {e}")
+        # The action vector's meaning comes from the order of the JSON's aero_surfaces block and
+        # is re-checked nowhere else, so it is checked here, once, at construction.
+        check_surface_order(self.config, aircraft_name)
+
         # Initialize base class
         super().__init__(self.config, save_history)    
 
@@ -174,7 +169,10 @@ class Aircraft(AircraftBase):
             self.aero_params['height ratio'].append(self.hr)
             self.aero_params['Coef_f'].append(np.array([self.coeffs['CL'], self.coeffs['CD']]))
             self.aero_params['Coef_m'].append(np.array([self.coeffs['Cl'], self.coeffs['Cm'], self.coeffs['Cn']]))
-            self.aero_params['oge_ige'].append(np.array([self.coeffs['CL_oge'], self.coeffs['CD_oge'], self.coeffs['CL'], self.coeffs['CD']]))
+            # free-air vs in-ground-effect pair, straight off the measured height sweep
+            self.aero_params['oge_ige'].append(np.array([
+                self.coeffs['CL_free'], self.coeffs['CD_free'],
+                self.coeffs['CL'], self.coeffs['CD']]))
 
     def check_termination_conditions(self) -> Dict[str, bool]:
         """
@@ -188,17 +186,19 @@ class Aircraft(AircraftBase):
             'stalled': False,
             'reason': None
         }
-        
-        # Check crash condition (wing hitting the ground)
-        wing_height = -self.state['position'][2] + self.VP['wing']['cg_offset_vector'][2]
-        if wing_height < 0:
+
+        # Crash: the CG reaching the ground. This was the WING height before the aerodynamic
+        # model changed -- the empirical ground-effect correction needed the wing's offset from
+        # the CG, and nothing else did, so `cg_offset_vector` went with it.
+        if -self.state['position'][2] < 0:
             termination['crashed'] = True
             termination['reason'] = 'CRASHED'
-        
-        # Check stall condition
-        STALL_SAFETY_FACTOR = 2.0  # Class constant
-        if hasattr(self, 'alpha') and np.abs(self.alpha * 180/np.pi) > STALL_SAFETY_FACTOR * self.AP['stall_angle_deg']:
+
+        # Incidence limit. NOT a stall -- the derivative model has no stall and will keep
+        # generating lift past this. It is the edge of the envelope the set was fitted in, and
+        # crossing it means the coefficients are extrapolation.
+        if hasattr(self, 'alpha') and np.abs(np.degrees(self.alpha)) > self.AP['alpha_max_deg']:
             termination['stalled'] = True
-            termination['reason'] = 'STALL ANGLE CRITICALLY EXCEEDED (2x)'
-        
+            termination['reason'] = 'ALPHA MAX EXCEEDED'
+
         return termination

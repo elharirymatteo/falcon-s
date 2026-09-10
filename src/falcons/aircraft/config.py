@@ -11,8 +11,11 @@ PLANES = ["Airship_V7", "Airship_A0S", "Volantex_Ranger", "Navion", "Cirrus_SR22
 # Keys a config must carry, because every default in params.py is Airship_V7's real value: a
 # missing one here silently flies V7's physics under another aeroplane's name. Deliberately
 # excluded are keys whose absence is meaningful rather than accidental — motor topology (twin
-# airframes name left/right, singles centre), the estimator block, and the rate-damping
-# derivatives Clp/Cmq/Cnr, whose 0.0 default is neutral rather than borrowed.
+# airframes name left/right, singles centre) and the estimator block.
+#
+# alpha_max_deg is required: it is the hard incidence termination, and the derivative model has no
+# stall of its own to fall back on, so a missing value would let a rollout run far outside the
+# envelope its coefficients were fitted in.
 REQUIRED = [
     "vehicle_params.mass",
     "vehicle_params.inertia_matrix",
@@ -21,7 +24,7 @@ REQUIRED = [
     "vehicle_params.wing.mac",
     "vehicle_params.wing.aspect_ratio",
     "vehicle_params.wing.taper_ratio",
-    "vehicle_params.wing.cg_offset_vector",
+    "aero_params.alpha_max_deg",
     "default_initial_state.position",
     "default_initial_state.linear_vel",
 ]

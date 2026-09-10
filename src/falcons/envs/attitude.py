@@ -208,9 +208,8 @@ class AttitudeEnv:
         self.spawn_alt = cfg.get("spawn_alt", 60.0)
 
         raw = AircraftConfig(self.aircraft).load()
-        self.stall_deg = raw["aero_params"]["stall_angle_deg"]
-        self.alpha_limit = float(np.radians(1.5 * self.stall_deg))
-        self.wing_cg_z = float(raw["vehicle_params"]["wing"]["cg_offset_vector"][2])
+        self.alpha_soft_deg = raw["aero_params"]["alpha_soft_deg"]
+        self.alpha_limit = float(np.radians(raw["aero_params"]["alpha_max_deg"]))
         self.base_vel = cfg.get("base_vel", float(raw["default_initial_state"]["linear_vel"][0]))
         self.va_min = cfg.get("va_min", 0.6 * self.base_vel)
         self.va_scale = max(0.5 * self.base_vel, 5.0)
@@ -353,7 +352,7 @@ class AttitudeEnv:
         self._term.zero_(); self._reason.zero_()
         wp.launch(check_termination_batch, dim=self.n, inputs=[
             s["position"], self.model._alpha, self.model._Va,
-            self.wing_cg_z, self.alpha_limit, self.va_min, self._term, self._reason],
+            self.alpha_limit, self.va_min, self._term, self._reason],
             device=self.device)
         wp.launch(_att_bank_term, dim=self.n, inputs=[
             s["orientation"], self.bank_limit, self._term, self._reason], device=self.device)

@@ -17,6 +17,7 @@ the negative-thrust brake regressing.
 import numpy as np
 import pytest
 
+from conftest import requires_derivatives
 from falcons.aircraft.params import load_params
 
 rho = 1.225  # sea-level density used by the warp thrust kernel at the low sim altitudes
@@ -25,8 +26,8 @@ rho = 1.225  # sea-level density used by the warp thrust kernel at the low sim a
 #  n_model_thrusters) -- single centreline motor is split across 2 model thrusters,
 #  each carrying half the disc area (PP.Sp is already the halved per-thruster area).
 CASES = [
-    ("Cirrus_SR22", 94.2, 856.0),
-    ("Navion", 75.0, 951.0),
+    pytest.param("Cirrus_SR22", 94.2, 856.0, marks=requires_derivatives("Cirrus_SR22")),
+    pytest.param("Navion", 75.0, 951.0, marks=requires_derivatives("Navion")),
 ]
 
 
@@ -66,9 +67,9 @@ def test_cruise_trim_throttle_in_range(ac, Va, drag):
         f"{ac} cruise trim throttle {hold:.2f} not in (0.05,0.95) -- mis-fit thrust scale")
 
 
+@requires_derivatives("Airship_V7")
 def test_v7_km_not_the_shared_default():
     """k_m must be V7-specific, not the copy-paste 37.42 shared across the fleet."""
-    from falcons.aircraft.params import load_params
     pp = load_params("Airship_V7")["vehicle_params"].PP
     assert abs(pp.k_m - 37.42) > 1.0, (
         f"V7 k_m reverted to the shared copy-paste default ({pp.k_m}); "

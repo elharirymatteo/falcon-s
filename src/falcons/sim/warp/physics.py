@@ -1,6 +1,10 @@
 import warp as wp
 
-from falcons.aircraft.params import WingParametersStruct, PropulsionParametersStruct
+from falcons.aircraft.params import (
+    AerodynamicsParametersStruct,
+    PropulsionParametersStruct,
+    WingParametersStruct,
+)
 
 from falcons.sim.warp.aerodynamics import compute_all_coeffs, euler_update, rk45_update, compute_derivatives, compute_aerodynamic_parameters, compute_thrust_forces_and_moments, compute_aerodynamic_forces_and_moments, compute_forces_applied_to_body, compute_lift_and_drag_forces
 from falcons.sim.warp.actuators import process_actuator_complete
@@ -47,8 +51,8 @@ def aircraft_simulation_step(
     Cl: wp.array(dtype=wp.float32),
     Cm: wp.array(dtype=wp.float32),
     Cn: wp.array(dtype=wp.float32),
-    C_D_ige: wp.array(dtype=wp.float32),
-    C_L_ige: wp.array(dtype=wp.float32),
+    C_D_free: wp.array(dtype=wp.float32),
+    C_L_free: wp.array(dtype=wp.float32),
     
     # Force/moment intermediates
     D_tot: wp.array(dtype=wp.float32),
@@ -77,25 +81,10 @@ def aircraft_simulation_step(
     dt: wp.float32,
     g: wp.float32,
     m: wp.float32,
-    in_ground_effect: bool,
-    
-    # Aerodynamic parameters structs
-    alpha_exp: wp.array(dtype=wp.float32),
-    beta_exp: wp.array(dtype=wp.float32),
-    elevator_exp: wp.array(dtype=wp.float32),
-    aileron_exp: wp.array(dtype=wp.float32),
-    rudder_exp: wp.array(dtype=wp.float32),
-    CD_coefs: wp.array(dtype=wp.float32),
-    CL_coefs: wp.array(dtype=wp.float32),
-    CY_coefs: wp.array(dtype=wp.float32),
-    CMx_coefs: wp.array(dtype=wp.float32),
-    CMy_coefs: wp.array(dtype=wp.float32),
-    CMz_coefs: wp.array(dtype=wp.float32),
-    Clp: wp.float32,
-    Cmq: wp.float32,
-    Cnr: wp.float32,
+    ge_enable: bool,
 
     # Configuration structs
+    AP: AerodynamicsParametersStruct,
     WP: WingParametersStruct,
     J: wp.mat33,                     
     PP: PropulsionParametersStruct, 
@@ -153,55 +142,50 @@ def aircraft_simulation_step(
     Va[tid] = Va_temp
     airspeed_vector[tid] = airspeed_vector_temp
 
-    # Step 3: Reset coefficients to zero
-    C_L[tid] = 0.0
-    C_D[tid] = 0.0
-    C_Y[tid] = 0.0
-    Cl[tid] = 0.0
-    Cm[tid] = 0.0
-    Cn[tid] = 0.0
-
-    # Step 4: Compute all aerodynamic coefficients
-    temp_C_D, temp_C_Y, temp_C_L, temp_Cl, temp_Cm, temp_Cn = \
+    # Step 3: Compute all aerodynamic coefficients.
+    # The actuator states are in DEGREES -- they are scaled from each airframe's
+    # min/max_deflection, which the JSONs give in degrees -- and the derivative set is per
+    # radian. This is the boundary, so this is where the conversion happens.
+    temp_C_D, temp_C_S, temp_C_L, temp_Cl, temp_Cm, temp_Cn, temp_C_D_free, temp_C_L_free = \
         compute_all_coeffs(
-            alpha[tid], beta[tid], elevator_state[tid], aileron_state[tid], rudder_state[tid],
-            alpha_exp, beta_exp, elevator_exp, aileron_exp, rudder_exp,
-            CD_coefs, CL_coefs, CY_coefs, CMx_coefs, CMy_coefs, CMz_coefs,
-            C_L[tid], C_D[tid], C_Y[tid], Cl[tid], Cm[tid], Cn[tid]
+            AP, WP.span, WP.mac,
+            alpha[tid], beta[tid], Va[tid],
+            wp.radians(elevator_state[tid]), wp.radians(aileron_state[tid]),
+            wp.radians(rudder_state[tid]),
+            angular_vel[tid][0], angular_vel[tid][1], angular_vel[tid][2],
+            -position[tid][2], ge_enable
         )
 
     C_D[tid] = temp_C_D
-    C_Y[tid] = temp_C_Y
+    C_Y[tid] = temp_C_S
     C_L[tid] = temp_C_L
     Cl[tid] = temp_Cl
     Cm[tid] = temp_Cm
     Cn[tid] = temp_Cn
+    C_D_free[tid] = temp_C_D_free
+    C_L_free[tid] = temp_C_L_free
 
-    # Step 5: Compute lift and drag forces
-    temp_D_tot, temp_Y_tot, temp_L_tot, temp_C_D_ige, temp_C_L_ige = \
+    # Step 4: Compute lift and drag forces
+    temp_D_tot, temp_Y_tot, temp_L_tot = \
         compute_lift_and_drag_forces(
-            Q[tid], WP, C_D[tid], C_Y[tid], C_L[tid], D_tot[tid], Y_tot[tid], L_tot[tid], 
-            in_ground_effect, position[tid]
+            Q[tid], WP, C_D[tid], C_Y[tid], C_L[tid], D_tot[tid], Y_tot[tid], L_tot[tid]
         )
 
     D_tot[tid] = temp_D_tot
     Y_tot[tid] = temp_Y_tot
     L_tot[tid] = temp_L_tot
-    C_D_ige[tid] = temp_C_D_ige
-    C_L_ige[tid] = temp_C_L_ige
 
-    # Step 6: Compute aerodynamic forces and moments
+    # Step 5: Compute aerodynamic forces and moments
     temp_Fw_aero, temp_Mb_aero = \
         compute_aerodynamic_forces_and_moments(
             D_tot[tid], Y_tot[tid], L_tot[tid], Cl[tid], Cm[tid], Cn[tid],
-            Q[tid], WP, Mac, angular_vel[tid], Va[tid], Clp, Cmq, Cnr,
-            Mb_aero[tid], Fw_aero[tid]
+            Q[tid], WP, Mac, Mb_aero[tid], Fw_aero[tid]
         )
 
     Fw_aero[tid] = temp_Fw_aero
     Mb_aero[tid] = temp_Mb_aero
 
-    # Step 7: Compute thrust forces and moments
+    # Step 6: Compute thrust forces and moments
     temp_Fb_thrust, temp_Mb_thrust = \
         compute_thrust_forces_and_moments(
             Va[tid], throttle_left_state[tid], throttle_right_state[tid], rho[tid], PP,
@@ -211,7 +195,7 @@ def aircraft_simulation_step(
     Fb_thrust[tid] = temp_Fb_thrust
     Mb_thrust[tid] = temp_Mb_thrust
 
-    # Step 8: Compute total forces applied to body
+    # Step 7: Compute total forces applied to body
     temp_Fb, temp_Mb, temp_Fb_g, temp_Fb_aero = \
         compute_forces_applied_to_body(
             alpha[tid], beta[tid], orientation[tid], Fw_aero[tid], Mb_aero[tid],
@@ -225,7 +209,7 @@ def aircraft_simulation_step(
     Fb_g[tid] = temp_Fb_g
     Fb_aero[tid] = temp_Fb_aero
 
-    # Step 9: Update state using Euler or RK45 integration based on solver_type
+    # Step 8: Update state using Euler or RK45 integration based on solver_type
     if solver_type == 0:
         temp_position, temp_linear_vel, temp_angular_vel, temp_orientation = \
             euler_update(

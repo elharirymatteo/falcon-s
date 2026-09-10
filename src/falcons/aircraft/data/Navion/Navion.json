@@ -12,8 +12,7 @@
       "area": 17.112,
       "mac": 1.74,
       "aspect_ratio": 6.04,
-      "taper_ratio": 0.54,
-      "cg_offset_vector": [0.0, 0.0, 0.0]
+      "taper_ratio": 0.54
     },
     "actuator_system": {
       "aero_surfaces": {
@@ -108,9 +107,9 @@
       }
   },
   "aero_params": {
-    "type": "polynomial",
-    "poly_params_file": "Navion_poly_params.csv",
-    "stall_angle_deg": 13.0
+    "derivative_set": "openvsp",
+    "alpha_max_deg": 19.5,
+    "alpha_soft_deg": 13.0
   },
   "environment_params": {
     "g": 9.81,

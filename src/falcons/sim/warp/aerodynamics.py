@@ -1,30 +1,41 @@
-from falcons.aircraft.params import WingParametersStruct, AerodynamicsParametersStruct, PropulsionParametersStruct
+from falcons.aircraft.params import IDX, WingParametersStruct, AerodynamicsParametersStruct, PropulsionParametersStruct
 import warp as wp
 
-@wp.func
-def compute_mu_l(taper_ratio: wp.float32,
-                 aspect_ratio: wp.float32,
-                 span: wp.float32,
-                 h_: wp.float32,
-                 cg_z_offset: wp.float32) -> wp.float32:
-    h = h_ + cg_z_offset
-    return 1.0 + (1.0 - 2.25 * (wp.pow(taper_ratio, 0.00273) - 0.997) *\
-                (wp.pow(aspect_ratio, 0.717) + 13.6)) *\
-                (288.0 * wp.pow(wp.abs(h/span), 0.787) *\
-                wp.exp(-9.14 * (wp.pow(wp.abs(h/span), 0.327)))) / (wp.pow(aspect_ratio, 0.882))
+# Channel offsets into the derivative set, taken from the one authority (params.CHANNELS) and
+# baked into the kernels at build time. Deriving them rather than retyping them is what keeps the
+# GPU layout from drifting away from the CPU one.
+_CD_TOTAL, _CD_ALPHA, _CD_ELEV, _CD_Q = IDX["CD_Total"], IDX["CD_Alpha"], IDX["CD_elevator"], IDX["CD_q"]
+_CL_TOTAL, _CL_ALPHA, _CL_ELEV, _CL_Q = IDX["CL_Total"], IDX["CL_Alpha"], IDX["CL_elevator"], IDX["CL_q"]
+_CM_TOTAL, _CM_ALPHA, _CM_ELEV, _CM_Q = IDX["CMm_Total"], IDX["CMm_Alpha"], IDX["CMm_elevator"], IDX["CMm_q"]
+_CS_BETA, _CS_AIL, _CS_RUD, _CS_P, _CS_R = IDX["CS_Beta"], IDX["CS_aileron"], IDX["CS_rudder"], IDX["CS_p"], IDX["CS_r"]
+_CL_BETA, _CL_AIL, _CL_RUD, _CL_P, _CL_R = IDX["CMl_Beta"], IDX["CMl_aileron"], IDX["CMl_rudder"], IDX["CMl_p"], IDX["CMl_r"]
+_CN_BETA, _CN_AIL, _CN_RUD, _CN_P, _CN_R = IDX["CMn_Beta"], IDX["CMn_aileron"], IDX["CMn_rudder"], IDX["CMn_p"], IDX["CMn_r"]
+
+V_FLOOR = 0.1     # airspeed floor for the rate non-dimensionalisation; see the CPU reference
+
 
 @wp.func
-def compute_mu_d(taper_ratio: wp.float32,
-                 aspect_ratio: wp.float32,
-                 span: wp.float32,
-                 h_: wp.float32,
-                 cg_z_offset: wp.float32) -> wp.float32:
-    h = h_ + cg_z_offset
-    term1 = 1.0 - (1.0 - 0.157 * wp.max(0.0, (wp.pow(taper_ratio, 0.775) - 0.373)) *\
-                wp.max(0.0, (wp.pow(aspect_ratio, 0.417) - 1.27))) *\
-                wp.exp(-4.74 * wp.max(0.0, wp.pow(abs(h/span), 0.814)))
-    term2 = wp.abs(h/span) * wp.abs(h/span) * wp.exp(-3.88 * wp.max(0.0, wp.pow(wp.abs(h/span), 0.758)))
-    return term1 - term2
+def ge_bracket(hc_q: wp.float32, hc: wp.array(dtype=wp.float32), n: wp.int32):
+    """Bracketing index and weight for h/c in the ground-effect sweep.
+
+    A linear scan, not a binary search: the sweep is 11 rows, so the scan is shorter than the
+    branch overhead. The weight is clamped, which is what makes the interpolation correct at both
+    ends -- below the sweep the increment is held, and above it the top row's increment is zero,
+    so the result is exactly free air.
+    """
+    i = int(0)
+    for k in range(1, n - 1):
+        if hc[k] <= hc_q:
+            i = k
+    w = wp.clamp((hc_q - hc[i]) / (hc[i + 1] - hc[i]), 0.0, 1.0)
+    return i, w
+
+
+@wp.func
+def ge_coef(AP: AerodynamicsParametersStruct, ch: wp.int32, i: wp.int32, w: wp.float32) -> wp.float32:
+    """One coefficient at the bracketed height: free air plus the interpolated increment."""
+    return AP.free[ch] + AP.ge_increment[i, ch] * (1.0 - w) + AP.ge_increment[i + 1, ch] * w
+
 
 @wp.func
 def compute_lift_and_drag_forces(Q: wp.float32,
@@ -34,25 +45,16 @@ def compute_lift_and_drag_forces(Q: wp.float32,
                              C_L: wp.float32,
                              D_tot: wp.float32,
                              Y_tot: wp.float32,
-                             L_tot: wp.float32,
-                             in_ground_effect: bool,
-                             position: wp.vec3f) -> None:
+                             L_tot: wp.float32) -> None:
+    """Wind-axis forces from the coefficients.
 
+    No ground-effect branch: ground effect is measured, and lives inside the coefficients now.
+    """
     D_tot = Q * WP.area * C_D
-    Y_tot = Q * WP.area * C_Y  
+    Y_tot = Q * WP.area * C_Y
     L_tot = Q * WP.area * C_L
-    C_D_ige = C_D
-    C_L_ige = C_L
 
-    if in_ground_effect:
-        mu_d = compute_mu_d(WP.taper_ratio, WP.aspect_ratio, WP.span, -position[2], WP.cg_z_offset)
-        mu_l = compute_mu_l(WP.taper_ratio, WP.aspect_ratio, WP.span, -position[2], WP.cg_z_offset)
-        D_tot *= mu_d*wp.pow(mu_l, 2.0)
-        L_tot *= mu_l
-        C_D_ige *= mu_d*wp.pow(mu_l, 2.0)
-        C_L_ige *= mu_l
-
-    return D_tot, Y_tot, L_tot, C_D_ige, C_L_ige
+    return D_tot, Y_tot, L_tot
 
 @wp.func
 def get_air_density(altitude: wp.float32) -> wp.float32:
@@ -165,14 +167,14 @@ def compute_aerodynamic_forces_and_moments(D_tot: wp.float32,
                                            Q: wp.float32,
                                            WP: WingParametersStruct,
                                            Mac: wp.float32,
-                                           angular_vel: wp.vec3f,
-                                           Va: wp.float32,
-                                           Clp: wp.float32,
-                                           Cmq: wp.float32,
-                                           Cnr: wp.float32,
                                            Mb_aero: wp.vec3f,
                                            Fw_aero: wp.vec3f) -> None:
+    """Wind-axis forces and body-axis moments from the coefficients.
 
+    No rotary-damping term is added here any more. The old Clp/Cmq/Cnr scalars came from the
+    airframe JSON because the polynomial model carried no rate derivatives; the OpenVSP set
+    measures CMl_p, CMm_q and CMn_r directly and `compute_all_coeffs` has already applied them.
+    """
     Fw_aero[0] = -D_tot
     Fw_aero[1] = Y_tot
     Fw_aero[2] = -L_tot
@@ -180,13 +182,6 @@ def compute_aerodynamic_forces_and_moments(D_tot: wp.float32,
     Mb_aero[0] = Cl * Q * WP.area * WP.span
     Mb_aero[1] = Cm * Q * WP.area * Mac
     Mb_aero[2] = Cn * Q * WP.area * WP.span
-
-    # rotary damping (the poly model has none): nondim rate * derivative, added to the body moments.
-    # standard form L_damp = Clp*(p b/2V)*Q S b, M_damp = Cmq*(q c/2V)*Q S c, N_damp = Cnr*(r b/2V)*Q S b
-    Vc = wp.max(Va, 1.0)
-    Mb_aero[0] += Clp * (angular_vel[0] * WP.span / (2.0 * Vc)) * Q * WP.area * WP.span
-    Mb_aero[1] += Cmq * (angular_vel[1] * Mac / (2.0 * Vc)) * Q * WP.area * Mac
-    Mb_aero[2] += Cnr * (angular_vel[2] * WP.span / (2.0 * Vc)) * Q * WP.area * WP.span
 
     return Fw_aero, Mb_aero
 
@@ -405,37 +400,80 @@ def rk45_update(
 
 
 @wp.func
-def compute_all_coeffs(alpha: wp.float32,
-                        beta: wp.float32,
-                        elevator: wp.float32,
-                        aileron: wp.float32,
-                        rudder: wp.float32,
-                        alpha_exp: wp.array(dtype=wp.float32),
-                        beta_exp: wp.array(dtype=wp.float32),
-                        elevator_exp: wp.array(dtype=wp.float32),
-                        aileron_exp: wp.array(dtype=wp.float32),
-                        rudder_exp: wp.array(dtype=wp.float32),
-                        CD_coefs: wp.array(dtype=wp.float32),
-                        CL_coefs: wp.array(dtype=wp.float32),
-                        CY_coefs: wp.array(dtype=wp.float32),
-                        CMx_coefs: wp.array(dtype=wp.float32),
-                        CMy_coefs: wp.array(dtype=wp.float32),
-                        CMz_coefs: wp.array(dtype=wp.float32),
-                        C_L: wp.float32,
-                        C_D: wp.float32,
-                        C_Y: wp.float32,
-                        Cl: wp.float32,
-                        Cm: wp.float32,
-                        Cn: wp.float32,
-                    )-> None:
-     
-    
-    for i in range(30):
-        coef = wp.pow(alpha * 180.0 / wp.PI, alpha_exp[i]) * wp.pow(beta * 180.0 / wp.PI, beta_exp[i]) * wp.pow(elevator, elevator_exp[i]) * wp.pow(aileron, aileron_exp[i]) * wp.pow(rudder, rudder_exp[i])
-        C_D += CD_coefs[i] * coef 
-        C_Y += CY_coefs[i] * coef 
-        C_L += CL_coefs[i] * coef 
-        Cl += CMx_coefs[i] * coef 
-        Cm += CMy_coefs[i] * coef 
-        Cn += CMz_coefs[i] * coef 
-    return C_D, C_Y, C_L, Cl, Cm, Cn
+def compute_all_coeffs(AP: AerodynamicsParametersStruct,
+                       span: wp.float32,
+                       mac: wp.float32,
+                       alpha: wp.float32,
+                       beta: wp.float32,
+                       v: wp.float32,
+                       elevator: wp.float32,
+                       aileron: wp.float32,
+                       rudder: wp.float32,
+                       p: wp.float32,
+                       q: wp.float32,
+                       r: wp.float32,
+                       h: wp.float32,
+                       ge_enable: bool) -> None:
+    """The OpenVSP derivative model. Mirrors
+    `falcons.sim.cpu.physics.aerodynamics.DerivativeAerodynamics.coefficients` term for term;
+    `tests/test_aero_parity.py` holds the two together.
+
+    Angles and deflections are RADIANS, rates rad/s, `h` metres positive up. Returns the six
+    coefficients plus the free-air lift and drag, which cost almost nothing here (no table
+    lookup) and are what the history plots as the ground-effect diagnostic.
+
+    There is no separate Clp/Cmq/Cnr damping term to add afterwards: CL_q, CMm_q, CMl_p, CMn_r,
+    CS_p and CS_r are members of the measured set and are applied below. Adding the old scalars
+    on top would double-count them.
+    """
+    v_c = wp.max(v, V_FLOOR)
+    p_hat = p * span / (2.0 * v_c)
+    q_hat = q * mac / (2.0 * v_c)
+    r_hat = r * span / (2.0 * v_c)
+
+    da = alpha - AP.alpha_run
+    de = elevator - AP.de_run
+
+    # Ground effect: bracket the height sweep once, then gather every channel from it. When
+    # disabled, index the top row, whose increment is zero by construction -- so the same
+    # arithmetic yields exactly the free-air set without a second code path.
+    i = int(AP.n_heights - 2)
+    w = wp.float32(1.0)
+    k_ind = AP.k_ind_free
+    if ge_enable:
+        i, w = ge_bracket(h / mac, AP.hc, AP.n_heights)
+        k_ind = AP.k_ind[i] * (1.0 - w) + AP.k_ind[i + 1] * w
+
+    cl_alpha = ge_coef(AP, _CL_ALPHA, i, w)
+
+    C_D = (ge_coef(AP, _CD_TOTAL, i, w) + ge_coef(AP, _CD_ALPHA, i, w) * da
+           + k_ind * (cl_alpha * da) * (cl_alpha * da)
+           + ge_coef(AP, _CD_ELEV, i, w) * de + ge_coef(AP, _CD_Q, i, w) * q_hat)
+
+    C_S = (ge_coef(AP, _CS_BETA, i, w) * beta + ge_coef(AP, _CS_AIL, i, w) * aileron
+           + ge_coef(AP, _CS_RUD, i, w) * rudder
+           + ge_coef(AP, _CS_P, i, w) * p_hat + ge_coef(AP, _CS_R, i, w) * r_hat)
+
+    C_L = (ge_coef(AP, _CL_TOTAL, i, w) + cl_alpha * da
+           + ge_coef(AP, _CL_ELEV, i, w) * de + ge_coef(AP, _CL_Q, i, w) * q_hat)
+
+    Cl = (ge_coef(AP, _CL_BETA, i, w) * beta + ge_coef(AP, _CL_AIL, i, w) * aileron
+          + ge_coef(AP, _CL_RUD, i, w) * rudder
+          + ge_coef(AP, _CL_P, i, w) * p_hat + ge_coef(AP, _CL_R, i, w) * r_hat)
+
+    Cm = (ge_coef(AP, _CM_TOTAL, i, w) + ge_coef(AP, _CM_ALPHA, i, w) * da
+          + ge_coef(AP, _CM_ELEV, i, w) * de + ge_coef(AP, _CM_Q, i, w) * q_hat)
+
+    Cn = (ge_coef(AP, _CN_BETA, i, w) * beta + ge_coef(AP, _CN_AIL, i, w) * aileron
+          + ge_coef(AP, _CN_RUD, i, w) * rudder
+          + ge_coef(AP, _CN_P, i, w) * p_hat + ge_coef(AP, _CN_R, i, w) * r_hat)
+
+    # free-air pair, straight off AP.free -- the diagnostic, not part of the dynamics
+    cl_alpha_f = AP.free[_CL_ALPHA]
+    C_L_free = (AP.free[_CL_TOTAL] + cl_alpha_f * da
+                + AP.free[_CL_ELEV] * de + AP.free[_CL_Q] * q_hat)
+    C_D_free = (AP.free[_CD_TOTAL] + AP.free[_CD_ALPHA] * da
+                + AP.k_ind_free * (cl_alpha_f * da) * (cl_alpha_f * da)
+                + AP.free[_CD_ELEV] * de + AP.free[_CD_Q] * q_hat)
+
+    return C_D, C_S, C_L, Cl, Cm, Cn, C_D_free, C_L_free

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import requires_derivatives
 from falcons.aircraft.config import PLANES
 from falcons.benchmark import TOLERANCE
 from falcons.benchmark.diff import compare_csv
@@ -9,18 +10,37 @@ from falcons.benchmark.ground_effect import RATIOS, geometry, run_energy, run_tr
 
 GOLD = Path(__file__).parent / "golden"
 
+AC = "Volantex_Ranger"
 
-def test_theory_is_lifting_line_shape():
-    """theory_pct is a thrust CHANGE, so the lifting-line shape is a large NEGATIVE saving deep in
-    ground effect rising monotonically to zero out of it -- not a positive quantity decaying to
-    zero. `geometry` returns the tuple (span, TR, AR, cg_z); `theory_pct` takes metres plus the
-    dict `build` carries, so the keys are supplied here."""
-    span, TR, AR, cg_z = geometry("Airship_V7")
-    P = dict(span=span, TR=TR, AR=AR, cg_z=cg_z)
-    pct = [theory_pct(r * span, P) for r in RATIOS]
-    assert pct[0] < -10.0                                  # h/b = 0.25: a large saving
-    assert all(a < b for a, b in zip(pct, pct[1:]))         # monotone toward zero with h/b
-    assert abs(pct[-1]) < 0.01                             # h/b = 6: out of ground effect
+
+@requires_derivatives(AC)
+def test_theory_curve_follows_the_measured_sweep():
+    """`theory_pct` is a drag CHANGE read off the airframe's own OpenVSP height sweep: a negative
+    saving deep in ground effect, rising monotonically to zero out of it.
+
+    This is no longer an independent analytic prediction -- it is the same measured table the
+    plant reads -- so it checks the plumbing and the height datum, not the physics. The old
+    assertion tested the lifting-line correlation's SHAPE, which no longer exists anywhere.
+    """
+    span, mac = geometry(AC)
+    pct = [theory_pct(AC, r * span) for r in RATIOS]
+    assert pct[0] < -1.0                                    # deepest band: a real saving
+    # Non-decreasing, not strictly increasing: every band at or above the top of the sweep is
+    # EXACTLY zero, which is the anchored increment doing its job rather than a plateau bug.
+    assert all(a <= b for a, b in zip(pct, pct[1:]))
+    assert abs(pct[-1]) < 1e-12                             # out of ground effect: nothing left
+
+    # inside the sweep it must actually vary
+    inside = [theory_pct(AC, r * span) for r in RATIOS if r * span / mac < 20.0]
+    assert len(inside) >= 2 and all(a < b for a, b in zip(inside, inside[1:]))
+
+
+@requires_derivatives(AC)
+def test_the_theory_curve_is_flat_above_the_measured_sweep():
+    """Above the sweep the increment is zero by construction, so there is no residual ground
+    effect at altitude -- the property the anchored increment was chosen for."""
+    assert theory_pct(AC, 100.0) == pytest.approx(0.0, abs=1e-9)
+    assert theory_pct(AC, 1000.0) == pytest.approx(0.0, abs=1e-9)
 
 
 # The shared reason string for every result golden frozen by the aero refactor. One grep finds

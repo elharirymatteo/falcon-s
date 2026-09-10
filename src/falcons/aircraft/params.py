@@ -13,30 +13,28 @@ from falcons.aircraft.config import AircraftConfig
 class WingParametersStruct:
     span: wp.float32
     area: wp.float32
-    cg_z_offset: wp.float32
-    cg_offset_vector: wp.vec3f
+    mac: wp.float32
     aspect_ratio: wp.float32
     taper_ratio: wp.float32
 
 @wp.struct
 class AerodynamicsParametersStruct:
-    alpha_exp: wp.array(dtype=wp.float32)
-    beta_exp: wp.array(dtype=wp.float32)
-    elevator_exp: wp.array(dtype=wp.float32)
-    aileron_exp: wp.array(dtype=wp.float32)
-    rudder_exp: wp.array(dtype=wp.float32)
+    """The derivative set on the GPU. `free` and `ge_increment` are laid out by
+    `CHANNELS`; `ge_increment` is (n_heights, N_CHANNELS) and `hc`/`k_ind` are (n_heights,).
 
-    CD_coefs: wp.array(dtype=wp.float32)
-    CY_coefs: wp.array(dtype=wp.float32)
-    CL_coefs: wp.array(dtype=wp.float32)
+    Rate damping is NOT a separate field any more. CL_q, CMm_q, CMl_p, CMn_r, CS_p and CS_r are
+    measured members of the set and are applied inside the coefficient model, so the old scalar
+    Clp/Cmq/Cnr would double-count them.
+    """
+    free: wp.array(dtype=wp.float32)          # (N_CHANNELS,) free-air coefficients
+    hc: wp.array(dtype=wp.float32)            # (n,) h/c grid of the ground-effect sweep
+    ge_increment: wp.array2d(dtype=wp.float32)  # (n, N_CHANNELS) anchored at the top row
+    k_ind: wp.array(dtype=wp.float32)         # (n,) induced-drag factor per height
 
-    CMx_coefs: wp.array(dtype=wp.float32)
-    CMy_coefs: wp.array(dtype=wp.float32)
-    CMz_coefs: wp.array(dtype=wp.float32)
-
-    Clp: wp.float32      # roll-rate damping (per-rad, nondim p*b/2V)
-    Cmq: wp.float32      # pitch-rate damping (per-rad, nondim q*c/2V)
-    Cnr: wp.float32      # yaw-rate damping (per-rad, nondim r*b/2V)
+    k_ind_free: wp.float32
+    alpha_run: wp.float32                     # operating point [rad]
+    de_run: wp.float32                        # operating point [rad]
+    n_heights: wp.int32
 
 @wp.struct
 class PropulsionParametersStruct:
@@ -57,106 +55,35 @@ class WingParameters:
     span: float = 5.00
     area: float = 3.32
     mac: float = 0.620
+    # aspect_ratio and taper_ratio no longer enter the physics: they fed the empirical
+    # ground-effect correlation, which the measured OpenVSP height sweep replaced. Kept because
+    # they describe the wing, not because anything reads them.
     aspect_ratio: float = 7.53
     taper_ratio: float = 0.39
-    cg_offset_vector: tuple = (0.221, 0, -0.293)
-    
+
     @classmethod
     def from_config(cls, config: Dict[str, Any]):
         """Create from JSON config"""
         vehicle_params = config.get('vehicle_params', {})
         wing = vehicle_params.get('wing', {})
-        
-        cg_offset = wing.get('cg_offset_vector', [0.221, 0, -0.293])
-        
+
         return cls(
             span=wing.get('span', 5.00),
             area=wing.get('area', 3.32),
             mac=wing.get('mac', 0.620),
             aspect_ratio=wing.get('aspect_ratio', 7.53),
             taper_ratio=wing.get('taper_ratio', 0.39),
-            cg_offset_vector=tuple(cg_offset)
         )
 
     def as_warp_struct(self):
         s = WingParametersStruct()
-        s.span = self.span                       
-        s.area = self.area                       
-        s.cg_z_offset = self.cg_offset_vector[2]  
-        s.cg_offset_vector = wp.vec3f(*self.cg_offset_vector)  
-        s.aspect_ratio = self.aspect_ratio        
-        s.taper_ratio = self.taper_ratio          
+        s.span = self.span
+        s.area = self.area
+        s.mac = self.mac
+        s.aspect_ratio = self.aspect_ratio
+        s.taper_ratio = self.taper_ratio
         return s
     
-
-@dataclasses.dataclass
-class AerodynamicsParameters:
-    """
-    Aerodynamic coefficients for the airship
-    """
-    type: str = "polynomial"
-    poly_params_file: str = "data/aircraft/Airship_V7/A1_V8_poly_params.csv"
-    stall_angle_deg: float = 13.0
-    # rotary damping derivatives (the poly model has none); default 0 = original behaviour
-    Clp: float = 0.0
-    Cmq: float = 0.0
-    Cnr: float = 0.0
-    
-    def __post_init__(self):
-        """Load the CSV data after initialization"""
-        df = pd.read_csv(self.poly_params_file)
-        
-        self.alpha_exp: np.ndarray = df["alpha"].to_numpy(dtype=np.float32)
-        self.beta_exp: np.ndarray = df["beta"].to_numpy(dtype=np.float32)
-        self.elevator_exp: np.ndarray = df["delta_e"].to_numpy(dtype=np.float32)
-        self.aileron_exp: np.ndarray = df["delta_a"].to_numpy(dtype=np.float32)
-        self.rudder_exp: np.ndarray = df["delta_r"].to_numpy(dtype=np.float32)
-
-        self.CD_coefs: np.ndarray = df["CD"].to_numpy(dtype=np.float32)
-        self.CY_coefs: np.ndarray = df["CY"].to_numpy(dtype=np.float32)
-        self.CL_coefs: np.ndarray = df["CL"].to_numpy(dtype=np.float32)
-
-        self.CMx_coefs: np.ndarray = df["CMx"].to_numpy(dtype=np.float32)
-        self.CMy_coefs: np.ndarray = df["CMy"].to_numpy(dtype=np.float32)
-        self.CMz_coefs: np.ndarray = df["CMz"].to_numpy(dtype=np.float32)
-
-    @classmethod
-    def from_config(cls, config: Dict[str, Any], config_manager: AircraftConfig = None):
-        """Create from JSON config"""
-        aero_params = config.get('aero_params', {})
-        
-        # Extract all fields from JSON
-        aero_type = aero_params.get('type', 'polynomial')
-        poly_file = aero_params.get('poly_params_file', 'A1_V8_poly_params.csv')
-        stall_angle_deg = aero_params.get('stall_angle_deg', 13.0)
-        
-        return cls(
-            type=aero_type,
-            poly_params_file=poly_file,
-            stall_angle_deg=stall_angle_deg,
-            Clp=aero_params.get('Clp', 0.0),
-            Cmq=aero_params.get('Cmq', 0.0),
-            Cnr=aero_params.get('Cnr', 0.0),
-        )
-
-    def as_warp_struct(self):
-        s = AerodynamicsParametersStruct()
-        s.alpha_exp = wp.array(self.alpha_exp, dtype=wp.float32, device="cuda")
-        s.beta_exp = wp.array(self.beta_exp, dtype=wp.float32, device="cuda")
-        s.elevator_exp = wp.array(self.elevator_exp, dtype=wp.float32, device="cuda")
-        s.aileron_exp = wp.array(self.aileron_exp, dtype=wp.float32, device="cuda")
-        s.rudder_exp = wp.array(self.rudder_exp, dtype=wp.float32, device="cuda")
-
-        s.CD_coefs = wp.array(self.CD_coefs, dtype=wp.float32, device="cuda")
-        s.CY_coefs = wp.array(self.CY_coefs, dtype=wp.float32, device="cuda")
-        s.CL_coefs = wp.array(self.CL_coefs, dtype=wp.float32, device="cuda")
-
-        s.CMx_coefs = wp.array(self.CMx_coefs, dtype=wp.float32, device="cuda")
-        s.CMy_coefs = wp.array(self.CMy_coefs, dtype=wp.float32, device="cuda")
-        s.CMz_coefs = wp.array(self.CMz_coefs, dtype=wp.float32, device="cuda")
-        s.Clp = wp.float32(self.Clp); s.Cmq = wp.float32(self.Cmq); s.Cnr = wp.float32(self.Cnr)
-        return s
-
 
 # ==================== OPENVSP DERIVATIVE SET ====================
 
@@ -283,6 +210,18 @@ class DerivativeAeroParameters:
             derivatives_file=aero_params["derivatives_file"],
             ge_derivatives_file=aero_params["ge_derivatives_file"],
         )
+
+    def as_warp_struct(self, device: str = "cuda"):
+        s = AerodynamicsParametersStruct()
+        s.free = wp.array(self.free, dtype=wp.float32, device=device)
+        s.hc = wp.array(self.hc, dtype=wp.float32, device=device)
+        s.ge_increment = wp.array(self.ge_increment, dtype=wp.float32, ndim=2, device=device)
+        s.k_ind = wp.array(self.k_ind, dtype=wp.float32, device=device)
+        s.k_ind_free = wp.float32(self.k_ind_free)
+        s.alpha_run = wp.float32(self.alpha_run)
+        s.de_run = wp.float32(self.de_run)
+        s.n_heights = wp.int32(len(self.hc))
+        return s
 
 
 @dataclasses.dataclass
@@ -426,7 +365,9 @@ class VehicleParameters:
     T_s: float = 0.2  # time constant for the throttle dynamics
     omega_0: float = 10.0  # natural frequency for the control surfaces
     zeta: float = 1 / np.sqrt(2)  # damping ratio
-    stall_angle: float = 13.0 * np.pi / 180  # stall angle wing
+    # Hard incidence termination [rad]. Not a stall angle: the derivative model has no stall, so
+    # this is the edge of the envelope its coefficients were fitted in.
+    alpha_max: float = 19.5 * np.pi / 180
 
     @classmethod
     def from_config(cls, config: Dict[str, Any]):
@@ -464,10 +405,9 @@ class VehicleParameters:
         motor = next(iter(motors.values()), {}) if motors else {}
         T_s = motor.get('T', 0.2)
         
-        # Get stall angle
-        stall_angle_deg = aero_params.get('stall_angle_deg', 13.0)
-        stall_angle_rad = stall_angle_deg * np.pi / 180
-        
+        # Hard incidence limit (see alpha_max above)
+        alpha_max_rad = np.radians(aero_params.get('alpha_max_deg', 19.5))
+
         # Create sub-components
         wing_params = WingParameters.from_config(config)
         inertia = Inertia.from_config(config)
@@ -486,7 +426,7 @@ class VehicleParameters:
             T_s = T_s,
             omega_0 = omega_0,
             zeta = zeta,
-            stall_angle = stall_angle_rad
+            alpha_max = alpha_max_rad
         )
 
 
@@ -600,13 +540,13 @@ class DefaultInitialState:
 
 # Factory function to create all parameters from config
 def load_params(aircraft_name: str):
-    """All parameter structs for one aircraft, built from its packaged JSON + polynomial-aero CSV."""
+    """All parameter structs for one aircraft, built from its packaged JSON + OpenVSP CSVs."""
     cfg = AircraftConfig(aircraft_name)
     config = cfg.load()
     return {
         'vehicle_params': VehicleParameters.from_config(config),
         'environment_params': EnvironmentParameters.from_config(config),
         'control_limits': ControlLimits.from_config(config),
-        'aero_params': AerodynamicsParameters.from_config(config, cfg),
+        'aero_params': DerivativeAeroParameters.from_config(config),
         'default_initial_state': DefaultInitialState.from_config(config)
     }

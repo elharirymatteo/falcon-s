@@ -345,9 +345,8 @@ class AltitudeEnv:
         # per-aircraft params (cross-plane generalization)
         self.aircraft = cfg.get("aircraft", "Airship_V7")
         raw = AircraftConfig(self.aircraft).load()
-        self.stall_deg = raw["aero_params"]["stall_angle_deg"]
-        self.alpha_limit = float(np.radians(1.5 * self.stall_deg))
-        self.wing_cg_z = float(raw["vehicle_params"]["wing"]["cg_offset_vector"][2])
+        self.alpha_soft_deg = raw["aero_params"]["alpha_soft_deg"]
+        self.alpha_limit = float(np.radians(raw["aero_params"]["alpha_max_deg"]))
         self.base_vel = cfg.get("base_vel", float(raw["default_initial_state"]["linear_vel"][0]))
         self.target_va = cfg.get("target_airspeed", self.base_vel)
         # airspeed thresholds scale with trim: the V7-tuned 10/15 break at A0S's 13 m/s trim
@@ -523,14 +522,14 @@ class AltitudeEnv:
             self._act, self._prev,
             self._target, self._va_tgt, self.w_alt, self.w_va, self.w_pr, self.w_sm,
             self.sigma, self.zone, self.va_band, self.recovery, self.ov_w, self.ov_thr,
-            0.01, self.alpha_safety_w, self.alpha_safety_start, self.stall_deg,
+            0.01, self.alpha_safety_w, self.alpha_safety_start, self.alpha_soft_deg,
             self.va_safety_w, self.va_safety_start, self.va_stall,
             self.g, self.energy_w, self.energy_sigma,
             self.damp_w, self.damp_zone, self.pr_cap, self.effort_w, self._rew], device=self.device)
 
         wp.launch(check_termination_batch, dim=self.n, inputs=[
             s["position"], self.model._alpha, self.model._Va,
-            self.wing_cg_z, self.alpha_limit, self.va_min, self._term, self._reason],
+            self.alpha_limit, self.va_min, self._term, self._reason],
             device=self.device)
         if self.h_floor is not None:
             wp.launch(_floor_term, dim=self.n, inputs=[
@@ -578,7 +577,7 @@ class AltitudeEnv:
             else:
                 va_band_c = (va_t - va_tgt_t).abs() - self.va_band
             cons = [
-                alpha_deg - self.cat_alpha_onset * self.stall_deg,
+                alpha_deg - self.cat_alpha_onset * self.alpha_soft_deg,
                 self.va_safety_start - va_t,
                 va_band_c,
                 ang_t[:, 1].abs() - self.cat_pr_lim,

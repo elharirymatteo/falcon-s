@@ -28,7 +28,7 @@ def compute_reward(
     survival_bonus: wp.float32,
     alpha_safety_weight: wp.float32,
     alpha_safety_start: wp.float32,
-    stall_deg: wp.float32,
+    alpha_soft_deg: wp.float32,
     va_safety_weight: wp.float32,
     va_safety_start: wp.float32,
     va_stall_threshold: wp.float32,
@@ -70,13 +70,14 @@ def compute_reward(
         excess = h_error - overshoot_threshold
         overshoot_penalty = -wp.min((excess / overshoot_threshold) * (excess / overshoot_threshold), 1.0)
 
-    # stall-safety shaping (Shukla/Khanzada out-of-band margin): 0 inside the safe
-    # envelope, -1 at the stall boundary.
+    # incidence shaping (Shukla/Khanzada out-of-band margin): 0 inside the safe envelope,
+    # -1 at alpha_soft_deg. Deliberately saturating BELOW the hard alpha_max gate -- this is what
+    # actually keeps a policy inside the envelope the derivative set was fitted in.
     alpha_safety_penalty = float(0.0)
     if alpha_safety_weight > 0.0:
         alpha_deg = wp.abs(alpha[tid]) * 180.0 / wp.PI
-        onset = alpha_safety_start * stall_deg
-        span = wp.max(stall_deg - onset, 1e-3)
+        onset = alpha_safety_start * alpha_soft_deg
+        span = wp.max(alpha_soft_deg - onset, 1e-3)
         ov = wp.max(0.0, (alpha_deg - onset) / span)
         alpha_safety_penalty = -wp.min(ov * ov, 1.0)
 

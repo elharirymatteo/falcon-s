@@ -19,8 +19,8 @@ def save_history_kernel(
     Fb_g: wp.array(dtype=wp.vec3f),
     C_L: wp.array(dtype=wp.float32),
     C_D: wp.array(dtype=wp.float32),
-    C_L_ige: wp.array(dtype=wp.float32),
-    C_D_ige: wp.array(dtype=wp.float32),
+    C_L_free: wp.array(dtype=wp.float32),
+    C_D_free: wp.array(dtype=wp.float32),
     Cl: wp.array(dtype=wp.float32),
     Cm: wp.array(dtype=wp.float32),
     Cn: wp.array(dtype=wp.float32),
@@ -47,8 +47,8 @@ def save_history_kernel(
     history_Fb_g: wp.array2d(dtype=wp.float32),
     history_C_L: wp.array(dtype=wp.float32),
     history_C_D: wp.array(dtype=wp.float32),
-    history_C_L_ige: wp.array(dtype=wp.float32),
-    history_C_D_ige: wp.array(dtype=wp.float32),
+    history_C_L_free: wp.array(dtype=wp.float32),
+    history_C_D_free: wp.array(dtype=wp.float32),
     history_Cl: wp.array(dtype=wp.float32),
     history_Cm: wp.array(dtype=wp.float32),
     history_Cn: wp.array(dtype=wp.float32),
@@ -107,8 +107,8 @@ def save_history_kernel(
     # Save coefficients
     history_C_L[step] = C_L[env_idx]
     history_C_D[step] = C_D[env_idx]
-    history_C_L_ige[step] = C_L_ige[env_idx]
-    history_C_D_ige[step] = C_D_ige[env_idx]
+    history_C_L_free[step] = C_L_free[env_idx]
+    history_C_D_free[step] = C_D_free[env_idx]
     history_Cl[step] = Cl[env_idx]
     history_Cm[step] = Cm[env_idx]
     history_Cn[step] = Cn[env_idx]

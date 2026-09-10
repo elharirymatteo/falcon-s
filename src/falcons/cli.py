@@ -33,10 +33,19 @@ def cmd_check(a):
             for plane in ("Airship_V7", "Volantex_Ranger"):
                 for s in (0, 1, 2):
                     load_policy(algo, task, plane, s, device=device, ckpt_dir=a.checkpoints); n += 1
-    plant = CpuAircraft("Airship_V7")
+    # Fly whichever airframe has its OpenVSP derivative data extracted. The aerodynamic model IS
+    # that data, so an airframe without it cannot be built -- and a smoke check that hardcodes one
+    # would fail for a reason that has nothing to do with the thing being checked.
+    from falcons.aircraft.config import PLANES, AircraftConfig
+    flyable = [p for p in PLANES if AircraftConfig(p).has_derivatives]
+    if not flyable:
+        print(f"{n} checkpoints load on {device}; NO airframe has derivative data, "
+              f"so the plant was not stepped.")
+        return
+    plant = CpuAircraft(flyable[0])
     plant.reset()
     plant.step(np.zeros(plant.get_aero_action_size()), np.zeros(plant.get_motor_action_size()))
-    print(f"{n} checkpoints load on {device}; cpu plant steps. OK")
+    print(f"{n} checkpoints load on {device}; {flyable[0]} cpu plant steps. OK")
 
 
 def cmd_train(a):
