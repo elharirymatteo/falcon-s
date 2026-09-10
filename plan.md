@@ -74,7 +74,34 @@ Phase 5 when the aero swap actually breaks them, not pre-emptively.
 
 Suite state after Phase 1: `pytest -m "not slow"` = **148 passed, 6 skipped, 1 xfailed**.
 
-### Phase 2 — next
+### Phase 2 — DONE
+
+Landed `src/falcons/sim/aero_contract.py` (warp-free) + `tests/test_aero_contract.py` (15 tests):
+`SURFACES`/`INDEX`, `AeroInputs`, `AeroCoefs`, `deflections_to_radians`, `aero_inputs`,
+`check_surface_order`.
+
+Two refinements made at the re-assessment gate:
+
+1. **The warp `wp.struct` mirror is deferred to Phase 3**, where the funcs that take it are
+   written. Defining it now needs a second, warp-importing module that Phase 3 would rewrite
+   anyway, and it would ship with no consumer and no test. `warp-lang` *is* a hard dependency
+   (pyproject), so this is a cleanliness call, not a portability one — the CPU reference plant
+   and the torch plant stay warp-free.
+2. **`check_surface_order` is not wired into `AircraftConfig.load()`.** Doing so would make
+   `aircraft/` import `sim/`, inverting the existing dependency (`sim/cpu/aircraft.py` imports
+   `falcons.aircraft.config`). Instead `test_aero_contract.py` checks all five shipped airframes,
+   so a reordered JSON fails CI regardless. **Phase 3 must call `check_surface_order` at plant
+   construction** in `cpu/aircraft.py`, `warp/aircraft.py` and `torch/altitude.py`.
+
+Verified while re-assessing: all five airframes list `aero_surfaces` as
+`elevator, ailerons, rudder` with matching `surface_type`, so there is no pre-existing
+mis-indexing to unwind. The guard matches on `surface_type`, not the JSON key, so `ailerons` vs
+`aileron` is tolerated but a reorder is not. Note the ordering was previously *implicit in JSON
+key order* (`cpu/aircraft.py:110,121` just take `list(...keys())`) and unchecked anywhere.
+
+Suite after Phase 2: **163 passed, 6 skipped, 1 xfailed**.
+
+### Phase 3 — next
 
 ## Decisions taken (by the user, 2026-09-10)
 
