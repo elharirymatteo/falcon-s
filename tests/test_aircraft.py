@@ -30,6 +30,27 @@ def test_files_present(ac):
         assert c.lqr_gains_path.exists()
 
 
+# The OpenVSP derivative data is being extracted per airframe and lands one airframe at a time.
+# Tests keyed on it SKIP while it is absent rather than failing, so dropping the two CSVs into
+# data/<plane>/ is the whole of bringing an airframe online -- no test edit required.
+def _skip_without_derivatives(ac):
+    return pytest.mark.skipif(
+        not AircraftConfig(ac).has_derivatives,
+        reason=f"{ac}: no OpenVSP derivative CSVs yet (plan.md Phase 1)",
+    )
+
+
+@pytest.mark.parametrize("ac", [pytest.param(a, marks=_skip_without_derivatives(a)) for a in PLANES])
+def test_derivative_files_present(ac):
+    c = AircraftConfig(ac)
+    assert c.derivatives_path.exists() and c.ge_derivatives_path.exists()
+
+
+def test_volantex_is_online():
+    """The airframe the refactor is built against. If this ever skips, the data moved."""
+    assert AircraftConfig("Volantex_Ranger").has_derivatives
+
+
 @pytest.mark.parametrize("ac", PLANES)
 def test_params_match_archive(ac):
     gold = json.load(open(GOLD / f"{ac}.json"))
@@ -48,14 +69,20 @@ def test_every_shipped_aircraft_is_complete():
         AircraftConfig(name).load()
 
 
-def _stage(name, tmp_path, mutate):
+def _stage(name, tmp_path, mutate, with_derivatives=False):
+    """A copy of one airframe's data directory with its JSON mutated. The derivative CSVs are
+    copied only on request: without them `load` skips the drift check, which is what the
+    unrelated raise-tests below want."""
     src = AircraftConfig(name)
     cfg = json.loads(src.json_path.read_text())
     mutate(cfg)
     d = tmp_path / name
-    d.mkdir()
+    d.mkdir(parents=True)
     (d / f"{name}.json").write_text(json.dumps(cfg))
     (d / f"{name}_poly.csv").write_text(src.poly_path.read_text())
+    if with_derivatives:
+        (d / f"{name}_derivatives.csv").write_text(src.derivatives_path.read_text())
+        (d / f"{name}_ge_derivatives.csv").write_text(src.ge_derivatives_path.read_text())
     return AircraftConfig(name, data_dir=tmp_path)
 
 
@@ -71,6 +98,33 @@ def test_a_motor_missing_its_disc_area_raises(tmp_path):
         next(iter(motors.values()))["motor_propeller_data"].pop("Sp")
     with pytest.raises(ValueError, match="Sp"):
         _stage("Volantex_Ranger", tmp_path, drop).load()
+
+
+# ─── the drift gate: the JSON is the reference, and the CSV records what the coefficients were
+#     actually non-dimensionalised by. Disagreement is silent and small, so it raises.
+
+def test_geometry_that_drifted_from_the_measured_reference_raises(tmp_path):
+    def bend(c):
+        c["vehicle_params"]["wing"]["mac"] = 0.157      # the pre-refactor rounded value
+    with pytest.raises(ValueError, match=r"FC_Cref_"):
+        _stage("Volantex_Ranger", tmp_path, bend, with_derivatives=True).load()
+
+
+def test_every_duplicated_geometry_field_is_checked(tmp_path):
+    """span/area/mac each have a CSV counterpart; none may be checked by accident."""
+    for key, fc in [("span", "FC_Bref_"), ("area", "FC_Sref_"), ("mac", "FC_Cref_")]:
+        cfg = _stage("Volantex_Ranger", tmp_path / key,
+                     lambda c, k=key: c["vehicle_params"]["wing"].update({k: 1.2345}),
+                     with_derivatives=True)
+        with pytest.raises(ValueError, match=fc):
+            cfg.load()
+
+
+def test_an_airframe_without_derivative_data_still_loads(tmp_path):
+    """The drift check cannot become a wall in front of airframes whose CSVs have not landed."""
+    cfg = _stage("Navion", tmp_path, lambda c: None)
+    assert not cfg.has_derivatives
+    assert cfg.load()["aero_params"]["derivatives_file"].endswith("Navion_derivatives.csv")
 
 
 def test_motor_topology_and_rate_damping_stay_optional():

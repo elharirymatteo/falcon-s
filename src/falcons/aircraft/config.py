@@ -1,4 +1,6 @@
-"""Aircraft data files: one place that knows the layout data/<plane>/<plane>{.json,_poly.csv,_K_LQR.csv}."""
+"""Aircraft data files: one place that knows the layout
+data/<plane>/<plane>{.json,_derivatives.csv,_ge_derivatives.csv,_poly.csv,_K_LQR.csv}."""
+import csv
 import json
 from pathlib import Path
 
@@ -34,6 +36,48 @@ def _absent(node, dotted: str) -> bool:
     return False
 
 
+# Geometry that appears BOTH in the aircraft JSON and in the VSPAERO run recorded by
+# <plane>_derivatives.csv. The JSON is the reference; the CSV rows say what the coefficients were
+# actually non-dimensionalised by. A disagreement means the config has drifted away from the
+# geometry that generated the data, so every coefficient is being applied against the wrong
+# reference area/length -- silently, and by a few tenths of a percent, which is exactly the size
+# that never gets noticed. So it raises.
+DUPLICATED_GEOMETRY = [
+    ("vehicle_params.wing.span", "FC_Bref_"),
+    ("vehicle_params.wing.area", "FC_Sref_"),
+    ("vehicle_params.wing.mac", "FC_Cref_"),
+]
+
+
+def _at(node, dotted: str):
+    for key in dotted.split("."):
+        node = node[key]
+    return node
+
+
+def read_derivatives(path: Path) -> dict:
+    """`name,value` rows -> dict. The file is one VSPAERO operating point: coefficients, stability
+    derivatives, and the FC_* rows recording the flight condition they were measured at."""
+    with open(path, newline="") as f:
+        return {r["name"]: float(r["value"]) for r in csv.DictReader(f)}
+
+
+def _reject_drift(cfg: dict, derivatives: dict, name: str) -> None:
+    drift = []
+    for dotted, fc in DUPLICATED_GEOMETRY:
+        if fc not in derivatives:
+            continue
+        json_value, csv_value = float(_at(cfg, dotted)), derivatives[fc]
+        if json_value != csv_value:
+            drift.append(f"{dotted}={json_value!r} but {fc}={csv_value!r} in the CSV")
+    if drift:
+        raise ValueError(
+            f"{name}: aircraft config has drifted from the geometry its aerodynamic data was "
+            f"measured at, so the coefficients would be applied against the wrong reference. "
+            f"Fix the JSON to match: {'; '.join(drift)}"
+        )
+
+
 def _reject_incomplete(cfg: dict, name: str) -> None:
     gaps = [k for k in REQUIRED if _absent(cfg, k)]
     motors = cfg.get("vehicle_params", {}).get("actuator_system", {}).get("motors", {})
@@ -55,15 +99,31 @@ class AircraftConfig:
         self.name = name
         self.dir = Path(data_dir) / name
         self.json_path = self.dir / f"{name}.json"
+        # OpenVSP derivative data. Paths are built unconditionally -- only `load` cares whether
+        # they exist, so an airframe whose CSVs have not been extracted yet can still be named.
+        self.derivatives_path = self.dir / f"{name}_derivatives.csv"
+        self.ge_derivatives_path = self.dir / f"{name}_ge_derivatives.csv"
         self.poly_path = self.dir / f"{name}_poly.csv"
         lqr = self.dir / f"{name}_K_LQR.csv"
         self.lqr_gains_path = lqr if lqr.exists() else None
         acq = self.dir / f"{name}_K_LQR_acquisition.csv"
         self.acquisition_gains_path = acq if acq.exists() else None
 
+    @property
+    def has_derivatives(self) -> bool:
+        """Whether this airframe's OpenVSP data has been extracted yet. Tests parametrised over
+        PLANES skip on this rather than failing, so dropping the CSVs in is all it takes to
+        bring an airframe online."""
+        return self.derivatives_path.exists() and self.ge_derivatives_path.exists()
+
     def load(self) -> dict:
-        """Raw JSON with the polynomial-aero file resolved to its packaged location."""
+        """Raw JSON with the aero data files resolved to their packaged locations, checked against
+        the geometry the derivative data was measured at."""
         cfg = json.loads(self.json_path.read_text())
         _reject_incomplete(cfg, self.name)
+        if self.has_derivatives:
+            _reject_drift(cfg, read_derivatives(self.derivatives_path), self.name)
+        cfg["aero_params"]["derivatives_file"] = str(self.derivatives_path)
+        cfg["aero_params"]["ge_derivatives_file"] = str(self.ge_derivatives_path)
         cfg["aero_params"]["poly_params_file"] = str(self.poly_path)
         return cfg
