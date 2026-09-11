@@ -1,8 +1,16 @@
 # Validating FALCON-S against JSBSim
 
 An optional side tool. It writes a JSBSim aircraft carrying a FALCON-S airframe's mass, inertia,
-geometry and polynomial aerodynamics, then flies both simulators from the same initial condition
-with the controls at zero and the throttle shut, and reports where they disagree.
+geometry and OpenVSP derivative aerodynamics, then flies both simulators from the same initial
+condition with the controls at zero and the throttle shut, and reports where they disagree.
+
+> **The "What the checks found" section below is from the polynomial-era run and has not been
+> reproduced against the derivative model.** The tool was ported when the aerodynamics were
+> replaced; the numbers in that section describe the aeroplane FALCON-S used to be. They are kept
+> because the *method* findings still stand — the wind-to-body sideslip sign, the rotating-earth
+> floor, the plant's first-order time-step error — but every figure quoted there needs re-measuring
+> before it is cited. `tests/test_jsbsim_export.py` is what currently holds the export honest, and
+> it needs no JSBSim.
 
 Nothing here is imported by the package, the CLI or the benchmark, and `jsbsim` is not in
 `requirements.lock`. Deleting the directory changes nothing.
@@ -28,8 +36,8 @@ python tools/jsbsim_validate/validate.py   --plane Navion --plot
 ```
 
 `gen_jsbsim.py` writes the aircraft; `validate.py` flies it. Regenerate whenever an airframe's
-JSON or `_poly.csv` changes — the tables are baked in. Both take `--plane` for any of the five
-airframes. `validate.py --help` lists the initial condition options: `--altitude`, `--attitude`,
+JSON or derivative CSVs change — the coefficients are baked in. Both take `--plane` for any of the
+four airframes. `validate.py --help` lists the initial condition options: `--altitude`, `--attitude`,
 `--speed`, `--alpha`, `--rates`, `--seconds`. A full run is about ten seconds.
 
 ## What comes out
@@ -42,7 +50,7 @@ paper: 7.0 in across the text block, 3.4 in for a single column, 8 pt type.
 | --- | --- | --- |
 | `fig1_rollout` | the two simulators fly the same aeroplane | altitude, airspeed, alpha and pitch rate across the top; the difference in each underneath on a log axis, at both plant steps. The top row is the evidence that this is a real manoeuvre and not a trim point; the bottom row is the accuracy |
 | `fig2_aero` | the aerodynamic model transferred | the coefficients from both sources (line and circles); what is left over, which is interpolation only; and the relative body-frame load error, explained below |
-| `fig3_ground_effect` | ground effect is the one difference that is meant to be there | the ratio the two are measured to differ by against what the model asks for — `mu_l` and `mu_d·mu_l²` — and what it does to a release a fifth of a span off the ground |
+| `fig3_ground_effect` | ground effect is the one difference that is meant to be there | the ratio the two are measured to differ by against what FALCON-S's own height sweep asks for, and what it does to a release a fifth of a span off the ground |
 | `fig4_time_step` | what limits the agreement is FALCON-S's own step | error against the plant's own `dt/64` solution, log-log, with a first-order reference line. JSBSim is not involved, so the slope is about the integrator alone |
 
 ### The right-hand panel of `fig2`, in full
@@ -124,27 +132,41 @@ channel's own peak-to-peak over the same window:
 
 ## What transfers, and what deliberately does not
 
-Every FALCON-S coefficient turns out to be a cubic in exactly two variables, which is why this
-needs six 2-D tables and no interpolation scheme:
+The aerodynamic model is linear in six deltas about one measured operating point, so it maps onto
+JSBSim arithmetic directly — `<sum>` of `<product>` terms — with **no tables and no interpolation
+anywhere**:
 
-| coefficient | table axes | JSBSim axis |
+| coefficient | JSBSim axis | terms |
 | --- | --- | --- |
-| CD, CL, CMy | alpha x elevator | DRAG, LIFT, PITCH |
-| CY, CMz | beta x rudder | SIDE, YAW |
-| CMx | beta x aileron | ROLL |
+| CD | DRAG | `CD_Total + CD_Alpha·da + k_ind·(CL_Alpha·da)² + CD_elevator·de + CD_q·q̂` |
+| CS | SIDE | `CS_Beta·β + CS_aileron·δa + CS_rudder·δr + CS_p·p̂ + CS_r·r̂` |
+| CL | LIFT | `CL_Total + CL_Alpha·da + CL_elevator·de + CL_q·q̂` |
+| Cl | ROLL | `CMl_Beta·β + CMl_aileron·δa + CMl_rudder·δr + CMl_p·p̂ + CMl_r·r̂` |
+| Cm | PITCH | `CMm_Total + CMm_Alpha·da + CMm_elevator·de + CMm_q·q̂` |
+| Cn | YAW | `CMn_Beta·β + CMn_aileron·δa + CMn_rudder·δr + CMn_p·p̂ + CMn_r·r̂` |
 
-Table values come from the plant's own `PolynomialAerodynamics`, so they cannot drift from the
-model they stand for. Alpha spans the full circle and beta ±90°, because with the controls at zero
-these airframes have no pitch trim and tumble; a table stopping at stall would clamp where the
-polynomial keeps going and invent a divergence that was the table's fault.
+where `da = α − α_run` and `de = δe − δe_run` are offsets from the linearisation point, and
+`p̂ = p·b/2V`, `q̂ = q·c̄/2V`, `r̂ = r·b/2V` use JSBSim's own `bi2vel`/`ci2vel`.
+
+Coefficients come from the same `DerivativeAeroParameters` the plant loads, so they cannot drift
+from the model they stand for. This got **simpler** with the aero refactor, not harder: the
+polynomial needed six 2-D tables spanning the full alpha circle, ~250 kB per airframe, and carried
+its own bilinear interpolation error into check 1. The linear set is 16 kB of exact arithmetic, so
+check 1 should now agree to round-off and any visible difference is a transcription bug.
 
 Left out on purpose:
 
-* **Ground effect.** JSBSim is the out-of-ground-effect reference that FALCON-S's ground-effect
-  model is measured against. Giving JSBSim a ground-effect model of its own would defeat the
+* **Ground effect.** JSBSim is the out-of-ground-effect reference that FALCON-S's measured height
+  sweep is judged against. Giving JSBSim a ground-effect model of its own would defeat the
   comparison, so height enters only through FALCON-S — that is what check 4 and check 5 measure.
-* **Rate damping.** `Clp`, `Cmq`, `Cnr` are omitted because the CPU plant does not apply them
-  either. The Warp plant does, so this aircraft is not a reference for that plant.
+  The XML carries the free-air set.
+
+No longer left out:
+
+* **Rate damping.** `CMl_p`, `CMm_q`, `CMn_r`, `CL_q`, `CD_q`, `CS_p` and `CS_r` are members of the
+  measured set and every FALCON-S backend applies them, so the export carries them too. Under the
+  polynomial they were omitted because the CPU plant applied none, which made this aircraft a
+  reference for the CPU plant only. That caveat is gone — it is now a reference for all four.
 * **Actuator and engine dynamics.** Controls are held at zero and the throttle shut throughout.
   Deflection limits are symmetric on every airframe, so a zero command is exactly zero degrees and
   a `-1` throttle command is exactly zero thrust; both stay there for the whole run.
@@ -180,6 +202,9 @@ Two smaller things, both handled in `validate.py`:
   over half a second, so its integration error is not part of what is being measured.
 
 ## What the checks found
+
+> Measured against the **polynomial** aero model, before the OpenVSP refactor. Kept for the method
+> findings; the figures need re-measuring. See the note at the top.
 
 Numbers below are the Navion, 2 s from 200 m, `V = 50 m/s`, `alpha = 2°`, attitude `0, -10, 30`.
 

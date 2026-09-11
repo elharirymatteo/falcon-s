@@ -198,11 +198,45 @@ Suite after Phase 3d: **184 passed, 9 skipped, 3 xfailed, 1 failed** (`pytest -m
 The single failure is Navion; six of the nine skips are Navion, one is the LQR gate, two predate
 this work (`trace fixture not present`).
 
-### Phase 4 — next
+### Phase 4 — DONE (2026-09-11)
 
-`tools/jsbsim_validate` is being ported to the derivative set (user's decision, 2026-09-11),
-not deleted. Note the poly CSVs it read are gone, so `gen_jsbsim.py` must emit from the derivative
-set alone.
+`tools/jsbsim_validate` ported to the derivative set (user's decision, 2026-09-11) rather than
+deleted. The `_NOT_PORTED` guards are gone from both entry points.
+
+The port made the tool **smaller**, which was not the expectation going in. A linear set maps onto
+JSBSim arithmetic directly — `<sum>` of `<product>` — so `gen_jsbsim.py` lost `check_layout`,
+`coefficient_table`, `table_xml`, the four grid CLI options and the pandas dependency. Generated
+aircraft went from ~250 kB of 2-D tables to 16 kB of exact expressions, and check 1 changed meaning
+with it: it used to measure bilinear interpolation error (~1.3e-4, irreducible), and now both sides
+evaluate the same linear expression, so it should agree to round-off and anything larger is a
+transcription bug.
+
+**Rate damping is now exported.** Its absence was a standing caveat — the polynomial had no rate
+derivatives and the CPU plant applied none, so the JSBSim aircraft was a reference for the CPU
+plant only, explicitly not for warp. `CMl_p`, `CMm_q`, `CMn_r`, `CL_q`, `CD_q`, `CS_p`, `CS_r` are
+measured set members that every backend applies, so the export carries them and the caveat is gone.
+
+`validate.py`: `falcons_polynomial` → `falcons_aero`; coefficient names `CY/CMx/CMy/CMz` →
+`CS/Cl/Cm/Cn` to match the plant and the emitted XML; check 4 prints the table's own
+`CL_ratio_ige`/`CD_ratio_ige` in place of `mu_l`/`mu_d`, with both the cross-simulator ratio and
+the within-plant ratio side by side so a gap between them reads as a free-air disagreement rather
+than a ground-effect one.
+
+**`tests/test_jsbsim_export.py` is new (18 tests) and needs no JSBSim.** It parses the emitted
+`<function>` blocks and evaluates them with an independent expression evaluator against the same
+inputs the plant sees, over three airframes and three all-channels-live conditions, agreeing to
+1e-12. This matters because JSBSim is not installed here, so the full validation could not be run:
+the export is verified, the *flight* comparison is not. One test specifically asserts the
+coefficients respond to body rates, which is the caveat that just went away and would otherwise
+regress invisibly in any check flown at zero rates.
+
+Stale generated aircraft: Cirrus and Navion deleted (Navion cannot be regenerated until its export
+is fixed), the other three regenerated. `validate.py --plane` still defaults to Navion, which fails
+with the missing-row message until then.
+
+The tool README's "What the checks found" section is **marked as polynomial-era and unreproduced**
+rather than rewritten. Those numbers describe the aeroplane FALCON-S used to be; re-measuring them
+needs JSBSim installed and is not something to guess at.
 
 ### Phase 6 — LQR against the derivative set (new, after Phase 4/5)
 

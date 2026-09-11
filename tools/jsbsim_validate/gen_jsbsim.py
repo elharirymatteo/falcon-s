@@ -1,70 +1,66 @@
 #!/usr/bin/env python3
 """Write a JSBSim aircraft that carries a FALCON-S airframe's mass, inertia, geometry and
-polynomial aerodynamics, so the two simulators can fly the same aeroplane.
+OpenVSP derivative aerodynamics, so the two simulators can fly the same aeroplane.
 
-Every FALCON-S coefficient is a cubic in exactly two variables — an angle and one control
-deflection — which is what makes this a handful of 2-D JSBSim tables rather than an
-interpolation problem:
+The aerodynamic model is linear in six deltas about one measured operating point, which maps
+onto JSBSim arithmetic directly -- `<sum>` of `<product>` terms -- with no tables and no
+interpolation anywhere:
 
-    CD, CL, CMy   alpha x elevator
-    CY, CMz       beta  x rudder
-    CMx           beta  x aileron
+    C_D = CD_Total + CD_Alpha*da + k_ind*(CL_Alpha*da)^2 + CD_elevator*de + CD_q*q_hat
+    C_S = CS_Beta*beta  + CS_aileron*da_a  + CS_rudder*dr  + CS_p*p_hat + CS_r*r_hat
+    C_L = CL_Total  + CL_Alpha*da  + CL_elevator*de  + CL_q*q_hat
+    C_l = CMl_Beta*beta + CMl_aileron*da_a + CMl_rudder*dr + CMl_p*p_hat + CMl_r*r_hat
+    C_m = CMm_Total + CMm_Alpha*da + CMm_elevator*de + CMm_q*q_hat
+    C_n = CMn_Beta*beta + CMn_aileron*da_a + CMn_rudder*dr + CMn_p*p_hat + CMn_r*r_hat
 
-Table values come from the plant's own PolynomialAerodynamics, so the tables cannot drift
-from the model they represent.
+    da = alpha - alpha_run,  de = delta_e - de_run      (the linearisation point)
+    p_hat = p*b/(2V),  q_hat = q*c/(2V),  r_hat = r*b/(2V)
+
+The predecessor of this script exported the polynomial model as 2-D tables (alpha x one
+control), and its whole difficulty was that a cubic in two variables does not fit anything
+JSBSim says natively. A linear set does, so the emitter got shorter rather than longer, and the
+comparison got sharper: the tables introduced their own interpolation error, and these
+`<function>` blocks are exact.
+
+Coefficient values come from the same `DerivativeAeroParameters` the plant loads, so the XML
+cannot drift from the model it represents.
 
 Deliberately left out:
 
-  * ground effect. JSBSim is the out-of-ground-effect reference that FALCON-S's ground-effect
-    model is measured against, so giving JSBSim a ground-effect model of its own would defeat
-    the comparison.
-  * rate damping (Clp, Cmq, Cnr). The CPU plant does not apply it either. Note that the Warp
-    plant does, so this aircraft is not a reference for that plant.
-  * actuator and engine dynamics. The validation holds every control at zero and the throttle
-    shut, and JSBSim's <flight_control> here is a bare command-to-degrees gain.
+  * ground effect. JSBSim is the out-of-ground-effect reference that FALCON-S's measured
+    ground-effect sweep is judged against, so giving JSBSim a ground-effect model of its own
+    would defeat the comparison. The free-air set is what is written here.
+  * actuator and engine dynamics. The validation holds every control at a commanded value and
+    the throttle shut, and JSBSim's <flight_control> here is a bare command-to-radians gain.
+
+NOT left out any more: **rate damping**. Its absence used to be a caveat on this tool, because
+the polynomial model had no rate derivatives and the CPU plant applied none. CMl_p, CMm_q,
+CMn_r, CL_q, CD_q, CS_p and CS_r are members of the measured set and every FALCON-S backend
+applies them, so JSBSim must too or the two aeroplanes differ in pitch and roll damping.
 """
 
 import argparse
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
 from falcons.aircraft.config import AircraftConfig
-
-# ─────────────────────────────────────────────────────────────────────────────────────────────
-# NOT PORTED YET to the OpenVSP derivative aero model.
-#
-# This tool exported the plant's POLYNOMIAL coefficients as JSBSim 2-D tables (alpha x control),
-# so JSBSim and FALCON-S could fly the same aeroplane. The polynomial model is gone: the plant is
-# now a linear derivative set about one VSPAERO operating point plus a measured ground-effect
-# sweep, which does not fit the 2-D table layout `check_layout` enforces. A linear set maps onto
-# JSBSim <function> blocks instead, which is a rewrite of the emitter rather than a tweak.
-#
-# See plan.md, Phase 4. Until then this tool refuses to run rather than exporting tables that no
-# longer describe the simulator.
-# ─────────────────────────────────────────────────────────────────────────────────────────────
-_NOT_PORTED = (
-    "tools/jsbsim_validate is not ported to the OpenVSP derivative aero model. It exported the "
-    "polynomial coefficients as JSBSim 2-D tables; the plant no longer has a polynomial. "
-    "Porting it means emitting <function> blocks for a linear derivative set -- see plan.md "
-    "Phase 4."
-)
+from falcons.aircraft.params import IDX, DerivativeAeroParameters
+from falcons.sim.aero_contract import SURFACES, check_surface_order
 
 # 1 slug*ft^2 = 14.5939029372 kg * 0.3048^2 m^2. Inertia is written to the XML already in
 # slug*ft^2 because JSBSim's own KG*M2 conversion carries a ~9e-5 relative error, which lands
 # straight on the angular rates this tool is trying to measure.
 KGM2_PER_SLUGFT2 = 14.5939029372 * 0.3048**2
 
-# coefficient -> (angle variable, control variable, JSBSim axis). Asserted against the CSV below.
-LAYOUT = {
-    "CD": ("alpha", "delta_e", "DRAG"),
-    "CY": ("beta", "delta_r", "SIDE"),
-    "CL": ("alpha", "delta_e", "LIFT"),
-    "CMx": ("beta", "delta_a", "ROLL"),
-    "CMy": ("alpha", "delta_e", "PITCH"),
-    "CMz": ("beta", "delta_r", "YAW"),
-}
+# JSBSim property carrying each deflection, in RADIANS. The <flight_control> block below builds
+# these from the normalised commands, matching ActuatorLimits.scale_from_normalized.
+CONTROL_PROPERTY = {"elevator": "fcs/elevator-rad",
+                    "aileron": "fcs/aileron-rad",
+                    "rudder": "fcs/rudder-rad"}
+COMMAND_PROPERTY = {"elevator": "fcs/elevator-cmd-norm",
+                    "aileron": "fcs/aileron-cmd-norm",
+                    "rudder": "fcs/rudder-cmd-norm"}
 
 # JSBSim axis -> the reference length its coefficient is non-dimensionalised on. FALCON-S uses
 # span for roll and yaw and the mean aerodynamic chord for pitch, which is JSBSim's convention
@@ -72,127 +68,146 @@ LAYOUT = {
 AXIS_LENGTH = {"DRAG": None, "SIDE": None, "LIFT": None,
                "ROLL": "metrics/bw-ft", "PITCH": "metrics/cbarw-ft", "YAW": "metrics/bw-ft"}
 
-# aero_action index each control sits at, matching PolynomialAerodynamics.get_coefficient.
-CONTROL_INDEX = {"delta_e": 0, "delta_a": 1, "delta_r": 2}
-CONTROL_PROPERTY = {"delta_e": "fcs/elevator-deg", "delta_a": "fcs/aileron-deg",
-                    "delta_r": "fcs/rudder-deg"}
-SURFACE_ORDER = ["elevator", "ailerons", "rudder"]
+# The six coefficients, each as (JSBSim axis, constant channel or None, [(channel, driver)...]).
+# Written out rather than derived so that this file states the model it is exporting, and a
+# reader can check it against the docstring above line by line.
+COEFFICIENTS = [
+    ("CD", "DRAG", "CD_Total", [("CD_Alpha", "da"), ("CD_elevator", "de"), ("CD_q", "q_hat")]),
+    ("CS", "SIDE", None, [("CS_Beta", "beta"), ("CS_aileron", "aileron"),
+                          ("CS_rudder", "rudder"), ("CS_p", "p_hat"), ("CS_r", "r_hat")]),
+    ("CL", "LIFT", "CL_Total", [("CL_Alpha", "da"), ("CL_elevator", "de"), ("CL_q", "q_hat")]),
+    ("Cl", "ROLL", None, [("CMl_Beta", "beta"), ("CMl_aileron", "aileron"),
+                          ("CMl_rudder", "rudder"), ("CMl_p", "p_hat"), ("CMl_r", "r_hat")]),
+    ("Cm", "PITCH", "CMm_Total", [("CMm_Alpha", "da"), ("CMm_elevator", "de"),
+                                  ("CMm_q", "q_hat")]),
+    ("Cn", "YAW", None, [("CMn_Beta", "beta"), ("CMn_aileron", "aileron"),
+                         ("CMn_rudder", "rudder"), ("CMn_p", "p_hat"), ("CMn_r", "r_hat")]),
+]
 
 
-def check_layout(poly: pd.DataFrame) -> None:
-    """Fail loudly if a coefficient depends on anything but the two variables LAYOUT claims."""
-    for coef, (angle, control, _) in LAYOUT.items():
-        rows = poly[poly[coef].abs() > 0]
-        used = [v for v in ("alpha", "beta", "delta_e", "delta_a", "delta_r")
-                if (rows[v] > 0).any()]
-        if sorted(used) != sorted([angle, control]):
-            raise SystemExit(
-                f"{coef} depends on {used}, not on {[angle, control]}. This airframe's "
-                f"polynomial does not fit in 2-D tables; the generator needs extending.")
+def num(x: float) -> str:
+    """Enough digits to round-trip a float64 exactly, so the XML is not a second source of error."""
+    return repr(float(x))
 
 
-def control_limits(config: dict) -> dict:
-    """Deflection limit per control, in degrees, asserted symmetric.
+def drivers(params: DerivativeAeroParameters) -> dict:
+    """The six deltas and three non-dimensional rates, as JSBSim expression fragments.
 
-    ServoActuator scales a normalised command to [min_deflection, max_deflection], so a
-    symmetric limit makes a zero command exactly zero degrees and lets JSBSim reproduce the
-    mapping with a single gain.
+    `bi2vel` and `ci2vel` are JSBSim's own b/(2V) and c/(2V), so the non-dimensionalisation is
+    JSBSim's rather than a reimplementation -- including its own low-airspeed guard, which is not
+    FALCON-S's 0.1 m/s floor. The two only disagree below a few m/s, which is outside anything
+    this validation flies, but it is the one place the transcription is not literal.
     """
-    surfaces = config["vehicle_params"]["actuator_system"]["aero_surfaces"]
-    if list(surfaces) != SURFACE_ORDER:
-        raise SystemExit(f"expected surfaces {SURFACE_ORDER}, found {list(surfaces)}; the "
-                         "aero_action index mapping in this script would be wrong")
-    limits = {}
-    for control, name in zip(["delta_e", "delta_a", "delta_r"], SURFACE_ORDER):
-        lo, hi = surfaces[name]["min_deflection"], surfaces[name]["max_deflection"]
-        if abs(lo + hi) > 1e-12:
-            raise SystemExit(f"{name} limits {lo}..{hi} are not symmetric")
-        limits[control] = float(hi)
-    return limits
+    def delta(prop, ref):
+        if ref == 0.0:
+            return f"<property>{prop}</property>"
+        return (f"<difference><property>{prop}</property>"
+                f"<value>{num(ref)}</value></difference>")
+
+    def rate(prop, i2vel):
+        return (f"<product><property>{prop}</property>"
+                f"<property>{i2vel}</property></product>")
+
+    return {
+        "da": delta("aero/alpha-rad", params.alpha_run),
+        "de": delta(CONTROL_PROPERTY["elevator"], params.de_run),
+        "beta": "<property>aero/beta-rad</property>",
+        "aileron": f"<property>{CONTROL_PROPERTY['aileron']}</property>",
+        "rudder": f"<property>{CONTROL_PROPERTY['rudder']}</property>",
+        "p_hat": rate("velocities/p-aero-rad_sec", "aero/bi2vel"),
+        "q_hat": rate("velocities/q-aero-rad_sec", "aero/ci2vel"),
+        "r_hat": rate("velocities/r-aero-rad_sec", "aero/bi2vel"),
+    }
 
 
-def coefficient_table(aero, coef: str, angle: str, control: str,
-                      angles_deg: np.ndarray, controls_deg: np.ndarray) -> np.ndarray:
-    """Evaluate one coefficient over the grid using the plant's own polynomial code."""
-    index = CONTROL_INDEX[control]
-    table = np.zeros((len(angles_deg), len(controls_deg)))
-    for i, angle_deg in enumerate(angles_deg):
-        alpha = np.radians(angle_deg) if angle == "alpha" else 0.0
-        beta = np.radians(angle_deg) if angle == "beta" else 0.0
-        for j, deflection in enumerate(controls_deg):
-            action = np.zeros(3)
-            action[index] = deflection
-            table[i, j] = aero.get_coefficient(coef, alpha, beta, action)
-    return table
+def coefficient_xml(name, constant, terms, params, drv, indent="   ") -> str:
+    """One coefficient as a <sum> of <product> terms."""
+    free = params.free
+    parts = []
+    if constant is not None:
+        parts.append(f"<value>{num(free[IDX[constant]])}</value>")
+    for channel, driver in terms:
+        gain = free[IDX[channel]]
+        parts.append(f"<!-- {channel} -->\n{indent}   "
+                     f"<product><value>{num(gain)}</value>{drv[driver]}</product>")
+    if name == "CD":
+        # The induced term, k_ind * (CL_Alpha * da)^2. k_ind is precomputed at load time from the
+        # free-air set -- CD_Alpha / (2 * CL_Total * CL_Alpha) -- exactly as the plant does it.
+        # This is the only non-linear term in the whole model.
+        k, cla = params.k_ind_free, free[IDX["CL_Alpha"]]
+        parts.append(
+            f"<!-- induced: k_ind * (CL_Alpha * da)^2 -->\n{indent}   "
+            f"<product><value>{num(k)}</value>"
+            f"<pow><product><value>{num(cla)}</value>{drv['da']}</product>"
+            f"<value>2.0</value></pow></product>")
+    body = "\n".join(f"{indent}   {p}" for p in parts)
+    return (f'{indent}<function name="aero/coeff/{name}">\n'
+            f'{indent} <description>{name} from the OpenVSP derivative set</description>\n'
+            f'{indent} <sum>\n{body}\n{indent} </sum>\n'
+            f'{indent}</function>')
 
 
-def table_xml(angle: str, control: str, angles_deg, controls_deg, table, indent: str) -> str:
-    header = "".join(f"{c:>16.6g}" for c in controls_deg)
-    rows = [f"{indent}      {a:>10.4f}" + "".join(f"{v:>16.8e}" for v in table[i])
-            for i, a in enumerate(angles_deg)]
-    return "\n".join([
-        f"{indent}<table>",
-        f"{indent}  <independentVar lookup=\"row\">aero/{angle}-deg</independentVar>",
-        f"{indent}  <independentVar lookup=\"column\">{CONTROL_PROPERTY[control]}</independentVar>",
-        f"{indent}  <tableData>",
-        f"{indent}      {'':>10}" + header,
-        *rows,
-        f"{indent}  </tableData>",
-        f"{indent}</table>",
-    ])
-
-
-def build(plane: str, alpha_range: float, beta_range: float,
-          angle_step: float, control_step: float) -> str:
-    config = AircraftConfig(plane).load()
-    vehicle = config["vehicle_params"]
-    wing = vehicle["wing"]
-    poly = pd.read_csv(config["aero_params"]["poly_params_file"])
-    check_layout(poly)
-    limits = control_limits(config)
-    aero = PolynomialAerodynamics(config["aero_params"], vehicle,
-                                  config["environment_params"], poly)
-
-    def grid(half_range: float, step: float) -> np.ndarray:
-        n = int(round(half_range / step))
-        return np.linspace(-half_range, half_range, 2 * n + 1)       # includes 0
-
-    angle_grid = {"alpha": grid(alpha_range, angle_step), "beta": grid(beta_range, angle_step)}
-    J = np.array(vehicle["inertia_matrix"], dtype=float) / KGM2_PER_SLUGFT2
-
-    functions, axes = [], []
-    for coef, (angle, control, axis) in LAYOUT.items():
-        angles_deg = angle_grid[angle]
-        m = int(round(limits[control] / control_step))
-        controls_deg = np.linspace(-limits[control], limits[control], 2 * m + 1)
-        table = coefficient_table(aero, coef, angle, control, angles_deg, controls_deg)
-        functions.append(
-            f'  <function name="aero/coeff/{coef}">\n'
-            f'   <description>{coef} from {plane}_poly.csv, {angle} x {control}</description>\n'
-            + table_xml(angle, control, angles_deg, controls_deg, table, "   ") + "\n"
-            f'  </function>')
-        terms = ["aero/qbar-psf", "metrics/Sw-sqft"]
-        if AXIS_LENGTH[axis]:
-            terms.append(AXIS_LENGTH[axis])
-        terms.append(f"aero/coeff/{coef}")
-        product = "\n".join(f"     <property>{t}</property>" for t in terms)
-        axes.append(
-            f'  <axis name="{axis}">\n'
+def axis_xml(name, axis) -> str:
+    terms = ["aero/qbar-psf", "metrics/Sw-sqft"]
+    if AXIS_LENGTH[axis]:
+        terms.append(AXIS_LENGTH[axis])
+    terms.append(f"aero/coeff/{name}")
+    product = "\n".join(f"     <property>{t}</property>" for t in terms)
+    return (f'  <axis name="{axis}">\n'
             f'   <function name="aero/{axis.lower()}">\n'
             f'    <product>\n{product}\n    </product>\n'
             f'   </function>\n'
             f'  </axis>')
 
+
+def control_limits(config: dict) -> dict:
+    """Deflection limit per surface, in RADIANS, asserted symmetric.
+
+    ServoActuator scales a normalised command to [min_deflection, max_deflection], so a symmetric
+    limit makes a zero command exactly zero and lets JSBSim reproduce the mapping with one gain.
+    The JSON key is the airframe's own name for the surface ("ailerons"); `surface_type` is what
+    identifies it, which is what `check_surface_order` matches on.
+    """
+    check_surface_order(config, name="gen_jsbsim")
+    surfaces = config["vehicle_params"]["actuator_system"]["aero_surfaces"]
+    by_type = {s["surface_type"]: s for s in surfaces.values()}
+    limits = {}
+    for surface in SURFACES:
+        lo, hi = by_type[surface]["min_deflection"], by_type[surface]["max_deflection"]
+        if abs(lo + hi) > 1e-12:
+            raise SystemExit(f"{surface} limits {lo}..{hi} are not symmetric")
+        limits[surface] = float(np.radians(hi))
+    return limits
+
+
+def build(plane: str) -> str:
+    config = AircraftConfig(plane).load()
+    vehicle = config["vehicle_params"]
+    wing = vehicle["wing"]
+    params = DerivativeAeroParameters.from_config(config)
+    limits = control_limits(config)
+    drv = drivers(params)
+
+    functions = [coefficient_xml(n, c, t, params, drv) for n, _, c, t in
+                 [(n, a, c, t) for n, a, c, t in COEFFICIENTS]]
+    axes = [axis_xml(n, a) for n, a, _, _ in COEFFICIENTS]
+
+    J = np.array(vehicle["inertia_matrix"], dtype=float) / KGM2_PER_SLUGFT2
     gains = "\n".join(
-        f'    <pure_gain name="{CONTROL_PROPERTY[c]}">\n'
-        f'     <input>fcs/{n}-cmd-norm</input>\n'
-        f'     <gain>{limits[c]}</gain>\n'
+        f'    <pure_gain name="{CONTROL_PROPERTY[s]}">\n'
+        f'     <input>{COMMAND_PROPERTY[s]}</input>\n'
+        f'     <gain>{num(limits[s])}</gain>\n'
         f'    </pure_gain>'
-        for c, n in [("delta_e", "elevator"), ("delta_a", "aileron"), ("delta_r", "rudder")])
+        for s in SURFACES)
+
+    run_point = (f"alpha = {np.degrees(params.alpha_run):.4f} deg, "
+                 f"elevator = {np.degrees(params.de_run):.4f} deg, "
+                 f"V = {params.v_ref} m/s")
 
     return f"""<?xml version="1.0"?>
 <!-- Generated by tools/jsbsim_validate/gen_jsbsim.py from FALCON-S airframe {plane}.
-     Out of ground effect, no rate damping, no engine. Do not hand-edit; regenerate. -->
+     OpenVSP linear derivative set about {run_point}.
+     Out of ground effect, no engine. Do not hand-edit; regenerate. -->
 <fdm_config name="{plane}_falcons" version="2.0" release="ALPHA">
 
  <fileheader>
@@ -226,7 +241,7 @@ def build(plane: str, alpha_range: float, beta_range: float,
  <ground_reactions/>
  <propulsion/>
 
- <flight_control name="command to degrees">
+ <flight_control name="command to radians">
   <channel name="surfaces">
 {gains}
   </channel>
@@ -245,35 +260,19 @@ def build(plane: str, alpha_range: float, beta_range: float,
 
 
 def main() -> None:
-    raise SystemExit(_NOT_PORTED)
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--plane", default="Navion", help="FALCON-S airframe name")
     parser.add_argument("--out", default=Path(__file__).parent / "aircraft", type=Path,
                         help="JSBSim aircraft directory to write into")
-    parser.add_argument("--alpha-range", type=float, default=180.0,
-                        help="alpha table half-range, degrees. Full circle by default: with the "
-                             "controls at zero these airframes have no pitch trim and tumble, and "
-                             "a table that stopped at stall would clamp where the polynomial keeps "
-                             "going, inventing a divergence that is the table's fault")
-    parser.add_argument("--beta-range", type=float, default=90.0,
-                        help="beta table half-range, degrees. asin(v/Va) cannot exceed 90")
-    parser.add_argument("--angle-step", type=float, default=1.0,
-                        help="alpha and beta table step, degrees. The only axis that interpolates "
-                             "in this validation, so check 1 of validate.py measures what it costs")
-    parser.add_argument("--control-step", type=float, default=5.0,
-                        help="deflection table step, degrees. Coarse on purpose: the controls sit "
-                             "at zero throughout, and zero is a grid node, so this axis "
-                             "contributes no interpolation error here")
     args = parser.parse_args()
 
-    xml = build(args.plane, args.alpha_range, args.beta_range,
-                args.angle_step, args.control_step)
+    xml = build(args.plane)
     directory = args.out / f"{args.plane}_falcons"
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{args.plane}_falcons.xml"
     path.write_text(xml)
-    print(f"wrote {path} ({path.stat().st_size / 1024:.0f} kB)")
+    print(f"wrote {path} ({path.stat().st_size / 1024:.1f} kB)")
 
 
 if __name__ == "__main__":
