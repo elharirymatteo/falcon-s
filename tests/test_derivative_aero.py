@@ -6,11 +6,11 @@ The aerodynamic model that consumes this arrives in Phase 3; these are the loade
 import numpy as np
 import pytest
 
-from falcons.aircraft.config import PLANES, AircraftConfig
+from falcons.aircraft.config import AircraftConfig
 from falcons.aircraft.params import CHANNELS, IDX, DerivativeAeroParameters
+from conftest import ONLINE_PLANES as ONLINE
 
-ONLINE = [p for p in PLANES if AircraftConfig(p).has_derivatives]
-pytestmark = pytest.mark.skipif(not ONLINE, reason="no airframe has derivative CSVs yet")
+pytestmark = pytest.mark.skipif(not ONLINE, reason="no airframe has usable derivative CSVs yet")
 
 
 def load(ac):

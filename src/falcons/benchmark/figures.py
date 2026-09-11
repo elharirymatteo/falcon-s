@@ -31,7 +31,7 @@ BANK_LIM = 50.0        # deg; the bank colour scale, shared by attitude_exec and
 METHOD_COLORS = {"LQR": "#8250c4", "MPPI": "#d1495b", "PPO": "#2a78d6", "SAC": "#008300",
                  "TD3": "#e8601c"}
 PLANE_COLORS = {"Airship_V7": "#2a78d6", "Airship_A0S": "#d1495b", "Volantex_Ranger": "#008300",
-                "Navion": "#8250c4", "Cirrus_SR22": "#e8601c"}
+                "Navion": "#8250c4"}
 # The two airframes the attitude figures report, in panel order, with their printed names.
 PRETTY = {"Airship_V7": "Airship V7", "Volantex_Ranger": "Volantex Ranger"}
 SHAPE_PRETTY = {"circle": "circle", "figure8": "figure-8", "helix": "helix", "sturn": "s-turn"}

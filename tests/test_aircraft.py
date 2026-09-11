@@ -2,8 +2,9 @@ import json
 from pathlib import Path
 import numpy as np
 import pytest
-from falcons.aircraft.config import PLANES, AircraftConfig
+from falcons.aircraft.config import PLANES, AircraftConfig, read_derivatives
 from falcons.aircraft.params import load_params
+from conftest import OFFLINE_REASON, requires_derivatives
 
 GOLD = Path(__file__).parent / "golden" / "configs"
 
@@ -17,27 +18,36 @@ def _todict(o):
 
 
 def test_planes_are_the_five():
-    assert PLANES == ["Airship_V7", "Airship_A0S", "Volantex_Ranger", "Navion", "Cirrus_SR22"]
+    assert PLANES == ["Airship_V7", "Airship_A0S", "Volantex_Ranger", "Navion"]
 
 
 @pytest.mark.parametrize("ac", PLANES)
 def test_files_present(ac):
-    c = AircraftConfig(ac)
-    assert c.json_path.exists() and c.poly_path.exists()
-    if ac == "Airship_A0S":
-        assert c.lqr_gains_path is None
-    else:
-        assert c.lqr_gains_path.exists()
+    assert AircraftConfig(ac).json_path.exists()
+
+
+def test_lqr_gains_are_gone_with_the_plant_they_were_fitted_to():
+    """The shipped K_LQR tables linearised the POLYNOMIAL plant around trim. That plant no longer
+    exists, so flying them would be flying gains designed for different aerodynamics. They were
+    deleted rather than left in place to be picked up silently; the LQR controller is refactored
+    against the derivative set in its own phase (plan.md Phase 6)."""
+    for name in PLANES:
+        c = AircraftConfig(name)
+        assert c.lqr_gains_path is None and c.acquisition_gains_path is None
 
 
 # The OpenVSP derivative data is being extracted per airframe and lands one airframe at a time.
 # Tests keyed on it SKIP while it is absent rather than failing, so dropping the two CSVs into
 # data/<plane>/ is the whole of bringing an airframe online -- no test edit required.
 def _skip_without_derivatives(ac):
-    return pytest.mark.skipif(
-        not AircraftConfig(ac).has_derivatives,
-        reason=f"{ac}: no OpenVSP derivative CSVs yet (plan.md Phase 1)",
-    )
+    return requires_derivatives(ac)
+
+
+def _skip_without_csvs(ac):
+    """Weaker than `_skip_without_derivatives`: the files merely have to be present. For checks
+    that exist to DIAGNOSE a bad export, and so must still run when the export does not load."""
+    return pytest.mark.skipif(not AircraftConfig(ac).has_derivatives,
+                              reason=f"{ac}: no OpenVSP derivative CSVs")
 
 
 @pytest.mark.parametrize("ac", [pytest.param(a, marks=_skip_without_derivatives(a)) for a in PLANES])
@@ -46,9 +56,16 @@ def test_derivative_files_present(ac):
     assert c.derivatives_path.exists() and c.ge_derivatives_path.exists()
 
 
-def test_volantex_is_online():
-    """The airframe the refactor is built against. If this ever skips, the data moved."""
-    assert AircraftConfig("Volantex_Ranger").has_derivatives
+def test_every_airframe_is_online():
+    """All four ship OpenVSP tables that actually build a model. This is the one test that FAILS
+    rather than skips when an airframe's data is bad: everything else keyed on derivative data
+    skips, so without this a broken export would read as a quiet green run.
+
+    Two ways to go dark. The file is absent -- the extractor emits bare `derivatives.csv` and the
+    airframe prefix has to be added on the way in. Or it loads and raises, which means the export
+    is incomplete; the message says which row is missing."""
+    broken = {n: r for n, r in OFFLINE_REASON.items() if r is not None}
+    assert not broken, "; ".join(f"{n}: {r}" for n, r in broken.items())
 
 
 # Absolute paths (machine-specific) and the bulk derivative tables are excluded from the archive
@@ -56,7 +73,7 @@ def test_volantex_is_online():
 # config would gain nothing that `test_derivative_aero.py` does not already check, and would go
 # stale on every re-extraction. The scalars derived from the data (the operating point, the
 # reference geometry, k_ind_free) ARE compared, because those are what a bad CSV would move.
-ARCHIVE_EXCLUDES = ("poly_params_file", "derivatives_file", "ge_derivatives_file",
+ARCHIVE_EXCLUDES = ("derivatives_file", "ge_derivatives_file",
                     "free", "hc", "ge_increment", "k_ind")
 
 
@@ -88,7 +105,6 @@ def _stage(name, tmp_path, mutate, with_derivatives=False):
     d = tmp_path / name
     d.mkdir(parents=True)
     (d / f"{name}.json").write_text(json.dumps(cfg))
-    (d / f"{name}_poly.csv").write_text(src.poly_path.read_text())
     if with_derivatives:
         (d / f"{name}_derivatives.csv").write_text(src.derivatives_path.read_text())
         (d / f"{name}_ge_derivatives.csv").write_text(src.ge_derivatives_path.read_text())
@@ -96,7 +112,7 @@ def _stage(name, tmp_path, mutate, with_derivatives=False):
 
 
 def test_a_missing_wing_key_raises_rather_than_taking_v7_geometry(tmp_path):
-    cfg = _stage("Cirrus_SR22", tmp_path, lambda c: c["vehicle_params"]["wing"].pop("span"))
+    cfg = _stage("Navion", tmp_path, lambda c: c["vehicle_params"]["wing"].pop("span"))
     with pytest.raises(ValueError, match=r"wing\.span"):
         cfg.load()
 
@@ -139,6 +155,29 @@ def test_an_airframe_without_derivative_data_still_loads(tmp_path):
 def test_motor_topology_stays_optional():
     single = AircraftConfig("Volantex_Ranger").load()["vehicle_params"]["actuator_system"]["motors"]
     assert set(single) == {"centre_motor"}          # no left/right, and it still loads
+
+
+@pytest.mark.parametrize("ac", [pytest.param(a, marks=_skip_without_csvs(a)) for a in PLANES])
+def test_the_run_point_is_a_trim_point(ac):
+    """Each derivative set is a linearisation about a condition the airframe can actually hold, so
+    lift at that condition must equal weight.
+
+    This is the cheapest cross-check there is on a fresh export: it ties mass, reference area,
+    density, airspeed and CL_Total together in one number, and a table exported for a DIFFERENT
+    aeroplane fails it by orders of magnitude rather than percent. One already did -- Navion
+    briefly shipped Volantex's set and came out at L/W = 0.001.
+
+    Use the run point's OWN density. `FC_Rho_` is not always 1.225: Navion's condition is 5000 ft
+    (rho = 1.0555), and assuming sea level makes a trimmed set look 16% heavy.
+    """
+    d = read_derivatives(AircraftConfig(ac).derivatives_path)
+    cfg = json.loads(AircraftConfig(ac).json_path.read_text())
+    weight = cfg["vehicle_params"]["mass"] * 9.80665
+    lift = 0.5 * d["FC_Rho_"] * d["FC_Vinf_"] ** 2 * d["FC_Sref_"] * d["CL_Total"]
+    assert lift == pytest.approx(weight, rel=1e-3), (
+        f"{ac}: the derivative set's run point is not a trim point -- lift {lift:.1f} N against "
+        f"weight {weight:.1f} N (L/W = {lift / weight:.4f}). Either the table belongs to another "
+        f"airframe, or the mass in the JSON is not the mass it was flown at.")
 
 
 def test_rate_damping_is_not_a_config_knob_any_more():

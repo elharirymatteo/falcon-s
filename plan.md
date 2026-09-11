@@ -141,7 +141,75 @@ comparing the scalars a bad CSV would move.
 
 Suite after Phase 3: **128 passed, 59 skipped, 1 xfailed** (`pytest -m "not slow"`).
 
+### Phase 3d — the remaining airframes land — DONE (2026-09-11)
+
+The user supplied derivative sets for Airship_V7, Airship_A0S and Navion, corrected the JSON
+geometry to match, and **dropped Cirrus_SR22 from the project**. The polynomial CSVs and the
+`K_LQR` gain tables were deleted along the way.
+
+What landed:
+
+- **Cirrus_SR22 removed** from `PLANES` (both copies), `envs/configs.py` (4 tables),
+  `benchmark/{tables,figures}.py`, the tests and `tests/golden/configs/`. Its checkpoint
+  (`ppo_altitude_Cirrus_SR22_s0.pt`) is left on disk — deleting a trained artefact is the user's
+  call, and `test_thirty_nine_checkpoints_ship` still counts 39.
+- **CSVs renamed on the way in.** The extractor emits bare `derivatives.csv`/`ge_derivatives.csv`;
+  they now carry the airframe prefix. Not decoration: an unprefixed table in the wrong directory
+  is invisible, and one already was — Navion arrived carrying Volantex's set, caught only because
+  the Phase 1b geometry cross-check raised. The prefix makes that mistake self-evident.
+- **`poly_path` / `poly_params_file` deleted** with the CSVs they pointed at.
+- **LQR gates, not deletion.** The gains linearised the polynomial plant; they are gone and
+  `lqr_gains_path` is now `None` everywhere. `test_lqr_gains_identical_to_archive` is skipped with
+  `LQR_PENDING`, and `tests/golden/lqr_gains/` is kept as the record of what the old plant flew.
+  The user is refactoring LQR next — see Phase 6.
+- **Absent data and broken data are now reported apart** (`conftest._why_offline`). A missing CSV
+  is expected mid-extraction; one that fails to load is a defect someone must fix. Skip reasons
+  carry the actual exception.
+- **`test_every_airframe_is_online` is the one test that FAILS rather than skips.** Everything else
+  keyed on derivative data skips, so without it a broken export reads as a quiet green run.
+- **A missing operating-point row raises** instead of defaulting to zero. `de_run` offsets every
+  elevator command, so a wrong value biases the pitch axis by a constant — in trim, where it is
+  least visible. This is what Navion is failing on now.
+- **`tests/test_aero_parity.py` runs on every online airframe** (16 → 48 tests) with case heights
+  expressed as h/b rather than metres. The rate terms scale by span on p/r and by MAC on q; with
+  one airframe a span/MAC mix-up is a constant that every backend agrees on. Volantex and V7
+  differ by 3x in span and 4.6x in MAC, which separates them.
+- **`test_sim_warp.py`'s termination block was stale** — it still passed `WING_CG_Z` (8 args to a
+  7-arg kernel) and `1.5 * STALL_DEG`. It had been skipping since Phase 3 because V7 was offline,
+  so the Phase 3 signature change was never exercised. Now reads `alpha_max` from the airframe.
+- Two more goldens gated: `warp_step.npz` and `attitude_obs.npy`. `GOLDENS_PENDING` moved from
+  `test_benchmark_ge.py` to `conftest.py`, since three files need it and one grep should find all.
+
+Verified: all three online airframes fly the CPU plant to finite state, and ground effect at
+h/b = 0.20 gives +7.6%/+7.4%/+6.8% lift and −10.6%/−9.6%/−6.8% drag (V7/A0S/Volantex) — the right
+sign and a plausible magnitude on each.
+
+> **Navion is not flyable.** Its re-export is missing the three `deflect_*_deg` rows, so the
+> elevator operating point is unknown. Six tests skip and `test_every_airframe_is_online` fails,
+> by design. Everything else about it checks out.
+
+**All four run points are trim points**, L/W = 1.0000 exactly. This is now a test
+(`test_the_run_point_is_a_trim_point`), gated only on the CSVs existing — not on them loading —
+because its job is to diagnose a bad export. Use `FC_Rho_`, not 1.225: Navion's condition is
+5000 ft (ρ = 1.05554) at 73.152 m/s and α = −3.02°, and assuming sea level makes a correctly
+trimmed set look 16% heavy. The other three are at sea level.
+
+Suite after Phase 3d: **184 passed, 9 skipped, 3 xfailed, 1 failed** (`pytest -m "not slow"`).
+The single failure is Navion; six of the nine skips are Navion, one is the LQR gate, two predate
+this work (`trace fixture not present`).
+
 ### Phase 4 — next
+
+`tools/jsbsim_validate` is being ported to the derivative set (user's decision, 2026-09-11),
+not deleted. Note the poly CSVs it read are gone, so `gen_jsbsim.py` must emit from the derivative
+set alone.
+
+### Phase 6 — LQR against the derivative set (new, after Phase 4/5)
+
+The user will refactor the LQR controller once the aero work is closed. The gains are deleted, the
+path is gated, and the linear derivative set gives the state-space A/B analytically — no numerical
+Jacobian — so `scripts/derive_lqr_gains.py` is now a tractable thing to write rather than a
+reverse-engineering job. Gates to clear: `LQR_PENDING` in `test_controllers.py`.
 
 ## Decisions taken (by the user, 2026-09-10)
 

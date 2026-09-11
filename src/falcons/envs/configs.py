@@ -19,7 +19,6 @@ RAMP_CONFIGS = {
     "Airship_A0S":     dict(rates=[0.5, 1.0, 1.5, 2.0], amp=10.0),
     "Volantex_Ranger": dict(rates=[1.0, 2.0, 3.0, 4.0], amp=15.0),
     "Navion":          dict(rates=[1.0, 2.0, 3.0, 5.0], amp=20.0),
-    "Cirrus_SR22":     dict(rates=[2.0, 4.0, 6.0, 8.0], amp=30.0),
 }
 
 # Per-aircraft best operating points (dynamic altitude-keeping, rate-limited reference).
@@ -43,7 +42,6 @@ PLANE_CONFIGS = {
     # (warp_ppo_altitude_Navion_optuna_best.pt).
     "Navion":      dict(spawn=10.0, sigma=4.94, w_pr=3.0, ref_rate=0.24, zone=1.84,
                         damp_w=0.52, w_alt=5.2),
-    "Cirrus_SR22": dict(spawn=20.0, sigma=5.0, w_pr=0.2, ref_rate=0.0),
 }
 
 
@@ -78,7 +76,6 @@ ATTITUDE_CONFIGS = {
     # GA piston airframes (post thrust fix, ad25cd0): real climb margin at cruise, so a wider
     # hdot envelope than the power-limited V7/Volantex. va_safety ~0.86*trim like the others.
     "Navion":          dict(phi_max_deg=45.0, hdot_max=3.0, w_energy=4.0, va_safety=64.5),
-    "Cirrus_SR22":     dict(phi_max_deg=45.0, hdot_max=3.0, w_energy=4.0, va_safety=81.0),
 }
 
 
@@ -91,4 +88,4 @@ def attitude_env_cfg(aircraft, horizon=2000):
 # Reference airspeed per airframe [m/s]: the classical reference modules emit this to the
 # controllers, and the evaluation protocol commands it.
 TRIM_VA = {"Airship_V7": 28.0, "Volantex_Ranger": 15.0,
-           "Airship_A0S": 18.0, "Navion": 45.0, "Cirrus_SR22": 94.0}
+           "Airship_A0S": 18.0, "Navion": 45.0}

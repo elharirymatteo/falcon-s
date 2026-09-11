@@ -125,7 +125,7 @@
   },
   "default_initial_state": {
     "position": [0.0, 0.0, -1.0],
-    "linear_vel": [15.0, 0.0, 0.0],
+    "linear_vel": [10.875, 0.0, 0.0],
     "angular_vel": [0.0, 0.0, 0.0],
     "orientation": [1.0, 0.0, 0.0, 0.0]
   }

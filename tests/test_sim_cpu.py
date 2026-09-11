@@ -1,11 +1,10 @@
-"""Piston-engine trim thrust regression (Cirrus_SR22, Navion).
+"""Piston-engine trim thrust regression (Navion).
 
-Both are single-motor piston GA aircraft whose JSON `motor_propeller_data` originally
-omitted k_m/C_p/Sp, so `PropulsionParameters.from_config` fell back to the airship
-copy-paste default k_m=37.42. Their trim speeds (94/75 m/s) exceed 37.42, so the Beard
-slipstream Vd = Va + thr*(k_m - Va) fell BELOW Va at full throttle: the prop windmilled
-as a brake (Cirrus -235 N, Navion -155 N) and neither could hold level flight in the
-warp sim.
+A single-motor piston GA aircraft whose JSON `motor_propeller_data` originally omitted
+k_m/C_p/Sp, so `PropulsionParameters.from_config` fell back to the airship copy-paste
+default k_m=37.42. Its trim speed (75 m/s) exceeds 37.42, so the Beard slipstream
+Vd = Va + thr*(k_m - Va) fell BELOW Va at full throttle: the prop windmilled as a brake
+(-155 N) and it could not hold level flight in the warp sim.
 
 Fitted k_m/C_p/Sp from real prop geometry (78" Hartzell / 84" 2-blade) and rated power
 (310 hp / 240 hp) via momentum-disk static thrust + power-available cruise thrust.
@@ -26,7 +25,6 @@ rho = 1.225  # sea-level density used by the warp thrust kernel at the low sim a
 #  n_model_thrusters) -- single centreline motor is split across 2 model thrusters,
 #  each carrying half the disc area (PP.Sp is already the halved per-thruster area).
 CASES = [
-    pytest.param("Cirrus_SR22", 94.2, 856.0, marks=requires_derivatives("Cirrus_SR22")),
     pytest.param("Navion", 75.0, 951.0, marks=requires_derivatives("Navion")),
 ]
 

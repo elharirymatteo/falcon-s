@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import requires_derivatives
+from conftest import GOLDENS_PENDING, requires_derivatives
 from falcons.aircraft.config import PLANES
 from falcons.benchmark import TOLERANCE
 from falcons.benchmark.diff import compare_csv
@@ -41,11 +41,6 @@ def test_the_theory_curve_is_flat_above_the_measured_sweep():
     effect at altitude -- the property the anchored increment was chosen for."""
     assert theory_pct(AC, 100.0) == pytest.approx(0.0, abs=1e-9)
     assert theory_pct(AC, 1000.0) == pytest.approx(0.0, abs=1e-9)
-
-
-# The shared reason string for every result golden frozen by the aero refactor. One grep finds
-# them all when the archive is regenerated. See plan.md Phase 5B.
-GOLDENS_PENDING = "aero model replaced; goldens pending retrain (plan.md Phase 5)"
 
 
 @pytest.mark.cuda

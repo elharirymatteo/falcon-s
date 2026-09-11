@@ -18,7 +18,7 @@ from falcons.paths import RESULTS_DIR
 # One method order across every table: the learned block, then the classical block.
 METHOD_ORDER = ["PPO", "SAC", "TD3", "LQR", "MPPI"]
 PRETTY = {"Airship_V7": "Airship V7", "Volantex_Ranger": "Volantex Ranger",
-          "Airship_A0S": "Airship A0S", "Navion": "Navion", "Cirrus_SR22": "Cirrus SR22"}
+          "Airship_A0S": "Airship A0S", "Navion": "Navion"}
 
 
 def rows(path):

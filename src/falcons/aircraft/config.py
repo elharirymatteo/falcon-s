@@ -1,12 +1,17 @@
 """Aircraft data files: one place that knows the layout
-data/<plane>/<plane>{.json,_derivatives.csv,_ge_derivatives.csv,_poly.csv,_K_LQR.csv}."""
+data/<plane>/<plane>{.json,_derivatives.csv,_ge_derivatives.csv,_K_LQR.csv}.
+
+The OpenVSP extractor emits its two tables as bare `derivatives.csv`/`ge_derivatives.csv`; they
+are renamed to carry the airframe prefix on the way in. That is not decoration -- an unprefixed
+table dropped into the wrong directory is invisible, and one already was (Navion briefly carried
+Volantex's set, caught only because the geometry cross-check below raised)."""
 import csv
 import json
 from pathlib import Path
 
 from falcons.paths import DATA_DIR
 
-PLANES = ["Airship_V7", "Airship_A0S", "Volantex_Ranger", "Navion", "Cirrus_SR22"]
+PLANES = ["Airship_V7", "Airship_A0S", "Volantex_Ranger", "Navion"]
 
 # Keys a config must carry, because every default in params.py is Airship_V7's real value: a
 # missing one here silently flies V7's physics under another aeroplane's name. Deliberately
@@ -106,7 +111,9 @@ class AircraftConfig:
         # they exist, so an airframe whose CSVs have not been extracted yet can still be named.
         self.derivatives_path = self.dir / f"{name}_derivatives.csv"
         self.ge_derivatives_path = self.dir / f"{name}_ge_derivatives.csv"
-        self.poly_path = self.dir / f"{name}_poly.csv"
+        # The LQR gains were fitted to the polynomial plant and were deleted with it, so these are
+        # None for every airframe today. The attribute stays because the LQR controller is being
+        # refactored next, not removed -- see plan.md Phase 6.
         lqr = self.dir / f"{name}_K_LQR.csv"
         self.lqr_gains_path = lqr if lqr.exists() else None
         acq = self.dir / f"{name}_K_LQR_acquisition.csv"
@@ -128,5 +135,4 @@ class AircraftConfig:
             _reject_drift(cfg, read_derivatives(self.derivatives_path), self.name)
         cfg["aero_params"]["derivatives_file"] = str(self.derivatives_path)
         cfg["aero_params"]["ge_derivatives_file"] = str(self.ge_derivatives_path)
-        cfg["aero_params"]["poly_params_file"] = str(self.poly_path)
         return cfg

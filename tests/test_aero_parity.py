@@ -7,98 +7,133 @@ the Dryden wind model, and notes there that the angular gusts are not even fed t
 
 The CPU implementation is the reference. Warp runs in float32, so it is compared at float32
 tolerance; torch is driven in float64 where it can be.
+
+Every airframe with usable data is exercised, not just one. The rate terms non-dimensionalise by
+span on p/r and by MAC on q, and with a single airframe a span/MAC mix-up is a constant factor
+that agrees across all four backends and so goes unseen. The airframes here differ by 3x in span
+(Volantex 1.62 m, Airship_V7 5.07 m) and 4.6x in MAC, which separates the two.
 """
 import numpy as np
 import pytest
 
+from conftest import ONLINE_PLANES
 from falcons.aircraft.config import AircraftConfig
 from falcons.aircraft.params import DerivativeAeroParameters
 from falcons.sim.aero_contract import AeroInputs
 from falcons.sim.cpu.physics.aerodynamics import DerivativeAerodynamics
 
-AC = "Volantex_Ranger"
-pytestmark = pytest.mark.skipif(not AircraftConfig(AC).has_derivatives,
-                                reason=f"{AC}: no OpenVSP derivative CSVs")
+pytestmark = pytest.mark.skipif(not ONLINE_PLANES,
+                                reason="no airframe has usable OpenVSP derivative CSVs")
 
 
-def build_cpu(ge_enable=True):
-    cfg = AircraftConfig(AC).load()
+def build_cpu(ac, ge_enable=True):
+    cfg = AircraftConfig(ac).load()
     wing = cfg["vehicle_params"]["wing"]
     return DerivativeAerodynamics(DerivativeAeroParameters.from_config(cfg),
                                   span=wing["span"], mac=wing["mac"], ge_enable=ge_enable)
 
 
+def geometry(ac):
+    wing = AircraftConfig(ac).load()["vehicle_params"]["wing"]
+    return float(wing["span"]), float(wing["mac"])
+
+
 # A spread of conditions: in deep ground effect, mid-sweep, far above the table, at the run point,
 # and with every control and rate channel excited so no term can be silently dropped.
-CASES = [
-    AeroInputs(alpha=0.0683, beta=0.0, v=10.875, elevator=-0.0776, aileron=0.0, rudder=0.0,
-               p=0.0, q=0.0, r=0.0, h=100.0),                       # the run point, out of GE
-    AeroInputs(alpha=0.05, beta=0.02, v=15.0, elevator=0.1, aileron=-0.05, rudder=0.03,
-               p=0.4, q=-0.3, r=0.2, h=0.35),                        # deep GE, all channels live
-    AeroInputs(alpha=-0.03, beta=-0.04, v=22.0, elevator=-0.2, aileron=0.1, rudder=-0.08,
-               p=-0.5, q=0.6, r=-0.4, h=1.0),                        # mid-sweep
-    AeroInputs(alpha=0.12, beta=0.01, v=8.0, elevator=0.3, aileron=0.02, rudder=0.01,
-               p=0.1, q=0.2, r=0.05, h=3.24),                        # exactly the table top
-    AeroInputs(alpha=0.02, beta=0.0, v=0.05, elevator=0.0, aileron=0.0, rudder=0.0,
-               p=1.0, q=1.0, r=1.0, h=0.1),                          # below the V floor and the GE floor
+#
+# Heights are h/b, not metres, because the sweep is measured on an h/b grid running 0.20 -> 2.00.
+# A fixed metre height would sit deep in ground effect for Volantex and out of it for Airship_V7,
+# so the cases would stop meaning what their names say as soon as the airframe changed.
+#
+# (alpha, beta, v, elevator, aileron, rudder, p, q, r, h_over_b, label)
+RAW_CASES = [
+    (None, 0.0, None, None, 0.0, 0.0, 0.0, 0.0, 0.0, 20.0, "run point, far out of GE"),
+    (0.05, 0.02, 15.0, 0.1, -0.05, 0.03, 0.4, -0.3, 0.2, 0.216, "deep GE, all channels live"),
+    (-0.03, -0.04, 22.0, -0.2, 0.1, -0.08, -0.5, 0.6, -0.4, 0.617, "mid-sweep"),
+    (0.12, 0.01, 8.0, 0.3, 0.02, 0.01, 0.1, 0.2, 0.05, 2.0, "exactly the table top"),
+    (0.02, 0.0, 0.05, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0617, "below the V floor and the GE floor"),
 ]
+IDS = [c[-1] for c in RAW_CASES]
 
 
+def cases_for(ac):
+    """The case table resolved against one airframe: heights scaled by its span, and the `None`
+    fields of case 0 filled from its own measured operating point."""
+    span, _ = geometry(ac)
+    p = DerivativeAeroParameters.from_config(AircraftConfig(ac).load())
+    out = []
+    for alpha, beta, v, elev, ail, rud, pp, q, r, hb, _ in RAW_CASES:
+        out.append(AeroInputs(
+            alpha=p.alpha_run if alpha is None else alpha, beta=beta,
+            v=p.v_ref if v is None else v,
+            elevator=p.de_run if elev is None else elev, aileron=ail, rudder=rud,
+            p=pp, q=q, r=r, h=hb * span))
+    return out
+
+
+@pytest.mark.parametrize("ac", ONLINE_PLANES)
 @pytest.mark.parametrize("ge", [True, False])
-@pytest.mark.parametrize("case", range(len(CASES)))
-def test_cpu_model_is_finite_and_ordered(case, ge):
+@pytest.mark.parametrize("case", range(len(RAW_CASES)), ids=IDS)
+def test_cpu_model_is_finite_and_ordered(ac, case, ge):
     """Guards the reference itself: no NaN from the V floor or the table clamps."""
-    c = build_cpu(ge_enable=ge).coefficients(CASES[case])
+    c = build_cpu(ac, ge_enable=ge).coefficients(cases_for(ac)[case])
     assert np.all(np.isfinite(c.as_array()))
 
 
-def test_free_air_is_reached_above_the_table():
+@pytest.mark.parametrize("ac", ONLINE_PLANES)
+def test_free_air_is_reached_above_the_table(ac):
     """The anchoring claim, end to end: at and above the sweep's top the in-ground-effect model
     must return exactly what the free-air model returns."""
-    ige, oge = build_cpu(True), build_cpu(False)
-    top = CASES[3]._replace(h=3.24)                  # h/c = 20.68, the top row
+    ige, oge = build_cpu(ac, True), build_cpu(ac, False)
+    span, mac = geometry(ac)
+    base = cases_for(ac)[3]
+    top = base._replace(h=ige.p.hc[-1] * mac)        # the top row itself
     np.testing.assert_allclose(ige.coefficients(top).as_array(),
                                oge.coefficients(top).as_array(), rtol=0, atol=1e-12)
-    far = CASES[3]._replace(h=100.0)                 # far above: clamped to the same row
+    far = base._replace(h=100.0 * span)              # far above: clamped to the same row
     np.testing.assert_allclose(ige.coefficients(far).as_array(),
                                oge.coefficients(far).as_array(), rtol=0, atol=1e-12)
 
 
-def test_ground_effect_is_off_below_the_table_floor_but_held():
+@pytest.mark.parametrize("ac", ONLINE_PLANES)
+def test_ground_effect_is_off_below_the_table_floor_but_held(ac):
     """Below the sweep the increment freezes rather than extrapolating."""
-    m = build_cpu(True)
-    at_floor = CASES[1]._replace(h=m.p.hc_floor * m.mac)
-    below = CASES[1]._replace(h=0.0)
+    m = build_cpu(ac, True)
+    base = cases_for(ac)[1]
+    at_floor = base._replace(h=m.p.hc_floor * m.mac)
+    below = base._replace(h=0.0)
     np.testing.assert_allclose(m.coefficients(below).as_array(),
                                m.coefficients(at_floor).as_array(), rtol=0, atol=1e-12)
 
 
-def test_ground_effect_raises_lift_near_the_ground():
-    m, f = build_cpu(True), build_cpu(False)
-    u = CASES[1]
+@pytest.mark.parametrize("ac", ONLINE_PLANES)
+def test_ground_effect_raises_lift_near_the_ground(ac):
+    m, f = build_cpu(ac, True), build_cpu(ac, False)
+    u = cases_for(ac)[1]
     assert m.coefficients(u).CL > f.coefficients(u).CL
 
 
 # ─── warp
 
 @pytest.mark.cuda
+@pytest.mark.parametrize("ac", ONLINE_PLANES)
 @pytest.mark.parametrize("ge", [True, False])
-def test_warp_matches_the_cpu_reference(ge):
+def test_warp_matches_the_cpu_reference(ac, ge):
     import warp as wp
 
     from falcons.aircraft.params import AerodynamicsParametersStruct
     from falcons.sim.warp.aerodynamics import compute_all_coeffs
 
     wp.init()
-    cfg = AircraftConfig(AC).load()
-    wing = cfg["vehicle_params"]["wing"]
+    cfg = AircraftConfig(ac).load()
     params = DerivativeAeroParameters.from_config(cfg)
     AP = params.as_warp_struct()
-    span, mac = float(wing["span"]), float(wing["mac"])
+    span, mac = geometry(ac)
+    cases = cases_for(ac)
 
-    n = len(CASES)
+    n = len(cases)
     fields = ["alpha", "beta", "v", "elevator", "aileron", "rudder", "p", "q", "r", "h"]
-    ins = {f: wp.array(np.array([getattr(c, f) for c in CASES], dtype=np.float32),
+    ins = {f: wp.array(np.array([getattr(c, f) for c in cases], dtype=np.float32),
                        dtype=wp.float32, device="cuda") for f in fields}
     out = wp.zeros((n, 6), dtype=wp.float32, device="cuda")
 
@@ -127,26 +162,28 @@ def test_warp_matches_the_cpu_reference(ge):
               device="cuda")
     wp.synchronize()
 
-    ref = np.array([build_cpu(ge_enable=ge).coefficients(c).as_array() for c in CASES])
+    ref = np.array([build_cpu(ac, ge_enable=ge).coefficients(c).as_array() for c in cases])
     np.testing.assert_allclose(out.numpy(), ref, rtol=2e-5, atol=2e-7)
 
 
 # ─── torch
 
-def test_torch_matches_the_cpu_reference():
+@pytest.mark.parametrize("ac", ONLINE_PLANES)
+def test_torch_matches_the_cpu_reference(ac):
     import torch
 
     from falcons.sim.torch.altitude import torch_coefficients
 
-    cfg = AircraftConfig(AC).load()
-    wing = cfg["vehicle_params"]["wing"]
+    cfg = AircraftConfig(ac).load()
     params = DerivativeAeroParameters.from_config(cfg)
+    span, mac = geometry(ac)
+    cases = cases_for(ac)
 
     for ge in (True, False):
-        cols = {f: torch.tensor([getattr(c, f) for c in CASES], dtype=torch.float64)
+        cols = {f: torch.tensor([getattr(c, f) for c in cases], dtype=torch.float64)
                 for f in AeroInputs._fields}
-        got = torch_coefficients(params, float(wing["span"]), float(wing["mac"]),
+        got = torch_coefficients(params, span, mac,
                                  ge_enable=ge, device="cpu", dtype=torch.float64, **cols)
-        ref = np.array([build_cpu(ge_enable=ge).coefficients(c).as_array() for c in CASES])
+        ref = np.array([build_cpu(ac, ge_enable=ge).coefficients(c).as_array() for c in cases])
         np.testing.assert_allclose(np.stack([g.numpy() for g in got], axis=-1), ref,
                                    rtol=1e-11, atol=1e-13)

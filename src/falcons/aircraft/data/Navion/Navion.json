@@ -1,16 +1,16 @@
 {
   "name": "Navion",
   "vehicle_params": {
-    "mass": 1293.0,
+    "mass": 1337.19,
     "inertia_matrix": [
-      [1742.33, 0.0, 149.5],
-      [0.0, 3762.4, 0.0],
-      [149.5, 0.0, 4389.1]
+      [1740.87, 0.0, 149.5],
+      [0.0, 3759.68, 0.0],
+      [149.5, 0.0, 4386.07]
     ],
     "wing": {
-      "span": 10.19,
-      "area": 17.112,
-      "mac": 1.74,
+      "span": 10.16000,
+      "area": 17.09416,
+      "mac": 1.73736,
       "aspect_ratio": 6.04,
       "taper_ratio": 0.54
     },
@@ -50,7 +50,7 @@
           "position": [2.44, 0.0, 0.0],
           "direction": "clockwise",
           "max_power": 178968.0,
-          "max_thrust": 4500.0,
+          "max_thrust": 4400.0,
           "thrust_vector": [1.0, 0.0, 0.0],
           "T": 3.0,
           "use_rk45_integration": "True",
@@ -127,7 +127,7 @@
   },
   "default_initial_state": {
     "position": [0.0, 0.0, -1.0],
-    "linear_vel": [75, 0.0, 0.0],
+    "linear_vel": [73.1520, 0.0, 0.0],
     "angular_vel": [0.0, 0.0, 0.0],
     "orientation": [1.0, 0.0, 0.0, 0.0]
   }

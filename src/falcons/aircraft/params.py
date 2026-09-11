@@ -149,6 +149,18 @@ class DerivativeAeroParameters:
 
         # Operating point the tables were MEASURED at: the model works in deltas from here, so
         # these are the only degrees in the whole path and they are converted once.
+        #
+        # A missing row is NOT defaulted to zero. `de_run` offsets every elevator command, so
+        # guessing it wrong biases the pitch axis by a fixed amount at every step -- silently, and
+        # in trim, which is where it would be least visible. An extraction that did not record its
+        # own deflections has to be re-run.
+        for row in ("FC_AoA_", "deflect_elevator_deg"):
+            if row not in d:
+                raise ValueError(
+                    f"{self.derivatives_file}: no {row!r} row, so the operating point the "
+                    f"coefficients were linearised about is unknown. Re-export this airframe -- "
+                    f"the model subtracts this value from every command, and assuming zero would "
+                    f"bias the axis in trim.")
         self.alpha_run: float = float(np.radians(d["FC_AoA_"]))
         self.de_run: float = float(np.radians(d["deflect_elevator_deg"]))
 

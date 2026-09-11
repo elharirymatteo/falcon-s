@@ -6,7 +6,7 @@ from pathlib import Path
 from falcons.paths import CKPT_DIR, RESULTS_DIR
 
 ALGOS, TASKS = ("ppo", "sac", "td3"), ("altitude", "attitude")
-PLANES = ("Airship_V7", "Airship_A0S", "Volantex_Ranger", "Navion", "Cirrus_SR22")
+PLANES = ("Airship_V7", "Airship_A0S", "Volantex_Ranger", "Navion")
 PROTOCOLS = ("altitude", "maneuvers", "ground-effect", "robustness", "throughput")
 ALTITUDE_DRAWS, MANEUVER_DRAWS = 3, 5   # MPPI sampling draws per cell, per protocol
 

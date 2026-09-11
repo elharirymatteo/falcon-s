@@ -10,13 +10,20 @@ from conftest import ONLINE_PLANES, requires_derivatives
 
 GOLD = Path(__file__).parent / "golden" / "lqr_gains"
 
+# One grep finds every gate the LQR refit must clear. See plan.md Phase 6.
+LQR_PENDING = "LQR gains were fitted to the polynomial plant; refit pending (plan.md Phase 6)"
+
 CELLS = [(a, t, p, s) for a in ALGOS for t in TASKS for p in ("Airship_V7", "Volantex_Ranger") for s in (0, 1, 2)]
-CELLS += [("ppo", "altitude", p, 0) for p in ("Airship_A0S", "Navion", "Cirrus_SR22")]
+CELLS += [("ppo", "altitude", p, 0) for p in ("Airship_A0S", "Navion")]
 CELL_MARKS = [pytest.param(a, t, p, s, marks=requires_derivatives(p)) for a, t, p, s in CELLS]
 
 
+@pytest.mark.skip(reason=LQR_PENDING)
 def test_lqr_gains_identical_to_archive():
-    for ac in ("Airship_V7", "Volantex_Ranger", "Navion", "Cirrus_SR22"):
+    """Frozen, not deleted. The gains themselves are gone -- they linearised the polynomial plant
+    -- so there is nothing to compare against `tests/golden/lqr_gains/` until the LQR controller is
+    refitted to the derivative set. The archive stays as the record of what the old plant flew."""
+    for ac in ("Airship_V7", "Volantex_Ranger", "Navion"):
         new = np.loadtxt(AircraftConfig(ac).lqr_gains_path, delimiter=",")
         old = np.loadtxt(GOLD / f"{ac}_K_LQR.csv", delimiter=",")
         np.testing.assert_array_equal(new, old)
