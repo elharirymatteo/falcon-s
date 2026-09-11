@@ -16,11 +16,8 @@ interpolation anywhere:
     da = alpha - alpha_run,  de = delta_e - de_run      (the linearisation point)
     p_hat = p*b/(2V),  q_hat = q*c/(2V),  r_hat = r*b/(2V)
 
-The predecessor of this script exported the polynomial model as 2-D tables (alpha x one
-control), and its whole difficulty was that a cubic in two variables does not fit anything
-JSBSim says natively. A linear set does, so the emitter got shorter rather than longer, and the
-comparison got sharper: the tables introduced their own interpolation error, and these
-`<function>` blocks are exact.
+No interpolation means no interpolation error, so a coefficient sweep compares the two
+implementations of the model rather than the accuracy of an export.
 
 Coefficient values come from the same `DerivativeAeroParameters` the plant loads, so the XML
 cannot drift from the model it represents.
@@ -33,10 +30,9 @@ Deliberately left out:
   * actuator and engine dynamics. The validation holds every control at a commanded value and
     the throttle shut, and JSBSim's <flight_control> here is a bare command-to-radians gain.
 
-NOT left out any more: **rate damping**. Its absence used to be a caveat on this tool, because
-the polynomial model had no rate derivatives and the CPU plant applied none. CMl_p, CMm_q,
-CMn_r, CL_q, CD_q, CS_p and CS_r are members of the measured set and every FALCON-S backend
-applies them, so JSBSim must too or the two aeroplanes differ in pitch and roll damping.
+Rate damping is NOT left out: CMl_p, CMm_q, CMn_r, CL_q, CD_q, CS_p and CS_r are members of the
+measured set and every FALCON-S backend applies them, so JSBSim must too or the two aeroplanes
+differ in pitch and roll damping.
 """
 
 import argparse
@@ -45,7 +41,7 @@ from pathlib import Path
 import numpy as np
 
 from falcons.aircraft.config import AircraftConfig
-from falcons.aircraft.params import IDX, DerivativeAeroParameters
+from falcons.aircraft.derivatives import IDX, DerivativeAeroParameters
 from falcons.sim.aero_contract import SURFACES, check_surface_order
 
 # 1 slug*ft^2 = 14.5939029372 kg * 0.3048^2 m^2. Inertia is written to the XML already in

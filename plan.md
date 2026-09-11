@@ -238,6 +238,65 @@ The tool README's "What the checks found" section is **marked as polynomial-era 
 rather than rewritten. Those numbers describe the aeroplane FALCON-S used to be; re-measuring them
 needs JSBSim installed and is not something to guess at.
 
+### Phase 4b — all four airframes flying, and two bugs the coverage exposed — DONE (2026-09-11)
+
+Navion re-exported with its `deflect_*_deg` rows, so **every airframe is online**. Suite is fully
+green for the first time since the refactor began: **277 passed, 3 skipped, 3 xfailed, 0 failed**
+(the skips are the LQR gate and two pre-existing `trace fixture not present`).
+
+Two real bugs surfaced, both found by coverage that only existed once several airframes were live:
+
+**1. The torch backend silently flew the wrong aeroplane.** `_tables()` cached the derivative set
+keyed on `id(params)` — a memory address. CPython reuses addresses, so once one airframe's
+parameters were freed the next airframe's object could be allocated at the same address and be
+handed the first one's tables. Nothing raises; the plant flies, with another aeroplane's
+aerodynamics. Demonstrated directly: three airframes in a row returned Volantex's coefficients.
+This is what a benchmark sweep over airframes does in one process, and the single-airframe parity
+test could not see it — it took the parity matrix growing to four airframes plus a garbage
+collection. Now keyed on the two CSV paths, which determine the tables completely.
+`test_torch_table_cache_survives_one_airframe_replacing_another` is the guard, and it was confirmed
+to fail against the old code.
+
+**2. The CPU plant had quietly acquired a Warp dependency.** `params.py` imports warp at module
+scope for the GPU structs, and `cpu/physics/aerodynamics.py` imported `DerivativeAeroParameters`
+from it, so the CPU reference plant could no longer be imported without a GPU stack. That broke
+`tools/jsbsim_validate`, whose whole value is being an independent check — a reference sharing a
+GPU stack with the thing it checks is a weaker reference. Fixed by splitting the warp-free half
+into **`falcons/aircraft/derivatives.py`** (`CHANNELS`, `IDX`, `_induced_drag_factor`,
+`DerivativeAeroParameters`, with warp imported locally inside `as_warp_struct`). `params.py`
+re-exports, so no existing import site changed. Guarded by
+`test_the_cpu_path_loads_without_warp`, which blocks warp in a subprocess.
+
+Also: Cirrus and Navion JSBSim aircraft regenerated, `out/` artefacts regenerated, and all
+polynomial-era description removed from `tools/jsbsim_validate` — README, docstrings, plot labels
+and the tumble narrative, which had become factually wrong (see below).
+
+### Phase 4c — the validation actually run — DONE (2026-09-11)
+
+`.venv-jsbsim` has JSBSim 1.3.1 installed, so the cross-validation was **run for all four
+airframes** rather than left unverified. Results are in `tools/jsbsim_validate/README.md`, measured
+not claimed:
+
+- **Coefficients agree to ≤ 2.7e-15** — round-off on a float64. The polynomial export could only
+  reach ~1.3e-4, because it went through 2-D tables and bilinear interpolation of a curved function
+  leaves a residual that trades against file size. A linear set is native JSBSim arithmetic, so
+  check 1 now measures the transcription rather than the export's accuracy.
+- **Body-frame loads agree to ≤ 4.6e-7 % of span**, with the `beta = 0` and `beta = 10°` blocks
+  matching — the standing guard on the wind-to-body rotation.
+- **The 6 s rollout is limited by the plant's own time step.** Refining it 20x recovers an order of
+  magnitude, and the self-convergence ladder gives order 1.09–1.13, i.e. first order, which is what
+  the integrator is.
+- **Ground effect is the whole of the remaining difference.** Check 4 prints FALCON-S/JSBSim beside
+  FALCON-S-in-GE/FALCON-S-free-air; they agree to every digit printed on all four airframes. Both
+  reach exactly 1.000 at the top of the sweep, with no clamp and no step — the anchoring working
+  end to end against an independent simulator.
+
+One qualitative change worth recording: **the airframes no longer tumble.** Under the polynomial
+an uncontrolled rollout went through several revolutions in six seconds, because that model had no
+rate derivatives and the CPU plant applied no damping. The measured set carries `CMm_q`, so the
+same initial condition now gives a bounded excursion (α within ±9° at t = 6 s on every airframe).
+A large part of the tool's prose was written about that tumble and is now gone.
+
 ### Phase 6 — LQR against the derivative set (new, after Phase 4/5)
 
 The user will refactor the LQR controller once the aero work is closed. The gains are deleted, the

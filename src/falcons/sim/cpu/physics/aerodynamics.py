@@ -27,7 +27,9 @@ from typing import Dict
 
 import numpy as np
 
-from falcons.aircraft.params import IDX, DerivativeAeroParameters
+# From `derivatives`, not `params`: params.py defines the warp structs and imports warp at
+# module scope, and the CPU reference plant must not need a GPU stack to run.
+from falcons.aircraft.derivatives import IDX, DerivativeAeroParameters
 from falcons.sim.aero_contract import AeroCoefs, AeroInputs
 from .atmosphere import AtmosphereStateMixin
 

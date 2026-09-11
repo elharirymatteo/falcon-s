@@ -95,3 +95,36 @@ def test_a_missing_coefficient_raises(tmp_path):
     with pytest.raises(ValueError, match="CMm_q"):
         DerivativeAeroParameters(derivatives_file=str(p),
                                  ge_derivatives_file=str(src.ge_derivatives_path))
+
+
+def test_the_cpu_path_loads_without_warp():
+    """The derivative set and the CPU reference plant must import with no GPU stack present.
+
+    `tools/jsbsim_validate` runs the CPU plant against JSBSim in a venv that has neither warp nor
+    torch, and that independence is most of what the cross-check is worth -- a reference sharing a
+    GPU stack with the thing it checks is a weaker reference. It is also why
+    `falcons.aircraft.derivatives` is separate from `falcons.aircraft.params`: params.py defines
+    the warp structs and imports warp at module scope.
+
+    Run in a subprocess with `warp` poisoned, because warp is already imported in this one.
+    """
+    import subprocess
+    import sys
+    import textwrap
+
+    script = textwrap.dedent("""
+        import sys
+        class Blocked:
+            def find_module(self, name, path=None):
+                if name == "warp" or name.startswith("warp."):
+                    raise ImportError("warp is blocked for this test")
+        sys.meta_path.insert(0, Blocked())
+        import falcons.aircraft.derivatives
+        import falcons.sim.cpu.physics.aerodynamics
+        import falcons.sim.cpu.aircraft
+        assert "warp" not in sys.modules, "something pulled warp in anyway"
+        print("OK")
+    """)
+    r = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert r.returncode == 0 and "OK" in r.stdout, (
+        f"the CPU path cannot import without warp:\n{r.stdout}\n{r.stderr}")

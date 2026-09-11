@@ -32,8 +32,21 @@ _TORCH_TABLES = {}
 
 
 def _tables(params, device, dtype):
-    """The derivative set as tensors, built once per (set, device, dtype)."""
-    key = (id(params), str(device), dtype)
+    """The derivative set as tensors, built once per (set, device, dtype).
+
+    Keyed on the CSV paths, not on `id(params)`. An id() is a memory address and CPython reuses
+    them: once one airframe's parameters are freed, the next airframe's object can be allocated at
+    the same address and read back the previous airframe's tables. Nothing raises -- the plant
+    flies, with another aeroplane's aerodynamics. A process holding one airframe at a time is
+    exactly what a benchmark sweep does, so the bug needed two airframes and a garbage collection
+    to appear, and the single-airframe parity test could not see it.
+
+    The two paths determine the tables completely (everything else on the object is derived from
+    them in `__post_init__`), so two parameter objects reading the same files SHOULD share an
+    entry. That also bounds the cache at airframes x devices x dtypes instead of growing without
+    limit, which the id() key also did.
+    """
+    key = (params.derivatives_file, params.ge_derivatives_file, str(device), dtype)
     if key not in _TORCH_TABLES:
         t = lambda a: torch.as_tensor(np.ascontiguousarray(a), device=device, dtype=dtype)
         _TORCH_TABLES[key] = (t(params.free), t(params.hc), t(params.ge_increment), t(params.k_ind))

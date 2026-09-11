@@ -168,6 +168,30 @@ def test_warp_matches_the_cpu_reference(ac, ge):
 
 # ─── torch
 
+@pytest.mark.skipif(len(ONLINE_PLANES) < 2, reason="needs two airframes to collide")
+def test_torch_table_cache_survives_one_airframe_replacing_another():
+    """The torch backend caches the derivative set as tensors. That cache must be keyed on the
+    DATA, not on the parameter object's identity.
+
+    `id()` is a memory address and CPython reuses them: build one airframe's parameters, drop
+    them, build another's, and the second object can land at the freed address and be handed the
+    first airframe's tables. Nothing raises -- the plant flies, with the wrong aeroplane's
+    aerodynamics. This is what a benchmark sweep over airframes does in one process, and it needed
+    a garbage collection between two airframes to appear, so a single-airframe parity test was
+    blind to it.
+    """
+    import torch
+
+    from falcons.sim.torch.altitude import _tables
+
+    for ac in ONLINE_PLANES:
+        params = DerivativeAeroParameters.from_config(AircraftConfig(ac).load())
+        free = _tables(params, "cpu", torch.float64)[0].numpy()
+        np.testing.assert_allclose(free, params.free, rtol=0, atol=0,
+                                   err_msg=f"{ac} was handed another airframe's derivative set")
+        del params          # free it, so the next airframe can be allocated at this address
+
+
 @pytest.mark.parametrize("ac", ONLINE_PLANES)
 def test_torch_matches_the_cpu_reference(ac):
     import torch

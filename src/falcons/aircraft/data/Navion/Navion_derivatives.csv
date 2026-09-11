@@ -70,3 +70,6 @@ FC_Xcg_,2.435
 FC_Yaw___Rate,0.0
 FC_Ycg_,0.0
 FC_Zcg_,0.0
+deflect_aileron_deg,0.0
+deflect_elevator_deg,7.75387
+deflect_rudder_deg,0.0
